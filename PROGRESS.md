@@ -114,11 +114,14 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [x] Bug visivo Alert (titolo sovrapposto all'icona): `[&>svg~*]:pl-7`
 - [x] Sidecar ricompilato (write-tags, download-key, fpcalc path); 69/69 test,
       typecheck pulito, dist rigenerato, smoke run ok
-- [ ] DEBITO: localizzazione completa dei testi di pagina (en/fr/de) — AVVIATA:
-      pattern pronto in `lib/i18nPages.ts` (namespace per pagina, fallback it,
-      4 lingue) con Dashboard migrata come pilota. Le altre pagine si migrano
-      meccanicamente: aggiungi il namespace al dizionario, sostituisci le
-      stringhe con `tp('chiave')` come in Dashboard.tsx
+- [ ] DEBITO: localizzazione testi di pagina (en/fr/de) — IN CORSO:
+      pattern in `lib/i18nPages.ts` (namespace per pagina, segnaposto {x},
+      fallback it, 4 lingue). MIGRATE: Dashboard, BackupPage, OrphansPage,
+      ConverterPage (incl. i 5 limiti export §4 nel dialog), PathField,
+      DangerConfirmDialog. RESTANO (ancora in italiano): Report, Relocator,
+      Review, Settings, About, Dedup, Tagger, Stems, AutoCue, Inbox, Planner,
+      Log. Migrazione meccanica: namespace nel dizionario + tp('chiave')
+      come nelle pagine già fatte
 - [x] Test automatico write-tags: `tests/writeTags.e2e.test.ts` (3 test) con MP3
       minimo VALIDO generato in Python (`tests/fixtures/make_audio_fixture.py`,
       frame MPEG reali + EasyID3). Copre: happy path (backup byte-identico al
