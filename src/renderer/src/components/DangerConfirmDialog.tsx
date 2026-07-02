@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input, Label } from '@/components/ui/misc';
+import { useAppState } from '@/lib/appState';
+import { t } from '@/lib/i18n';
 
 /**
  * Doppia conferma per azioni distruttive (§3.3): la seconda conferma richiede
@@ -32,6 +34,7 @@ export function DangerConfirmDialog({
   confirmLabel: string;
   onConfirm: () => void;
 }) {
+  const { locale } = useAppState();
   const [typed, setTyped] = useState('');
   const [checked, setChecked] = useState(false);
   const armed = typed.trim() === confirmWord && checked;
@@ -61,7 +64,8 @@ export function DangerConfirmDialog({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="confirm-word">
-              Per confermare, scrivi <span className="font-mono font-bold">{confirmWord}</span>
+              {t(locale, 'danger.typeToConfirm')}{' '}
+              <span className="font-mono font-bold">{confirmWord}</span>
             </Label>
             <Input
               id="confirm-word"
@@ -73,12 +77,12 @@ export function DangerConfirmDialog({
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={checked} onCheckedChange={(v) => setChecked(v === true)} />
-            Ho capito i rischi di questa operazione
+            {t(locale, 'danger.understood')}
           </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Annulla
+            {t(locale, 'common.cancel')}
           </Button>
           <Button
             variant="destructive"

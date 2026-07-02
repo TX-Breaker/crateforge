@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Input, Label } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { formatBytes } from '@/lib/utils';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
+import { t } from '@/lib/i18n';
 
 interface PlanSummary {
   planId: string;
@@ -20,6 +23,8 @@ interface PlanSummary {
  * esegui. Il DB Rekordbox viene sempre copiato per primo (§3.2).
  */
 export function BackupPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'backup', k, p);
   const [musicDir, setMusicDir] = useState('');
   const [backupDir, setBackupDir] = useState('');
   const [masterDb, setMasterDb] = useState('');
@@ -65,9 +70,9 @@ export function BackupPage() {
     try {
       const r = await window.crateforge.backup.execute(plan.planId);
       setResult(
-        `Backup completato: ${r.copied} file copiati` +
-          (r.dbSnapshotDir ? `. Database salvato in ${r.dbSnapshotDir}` : '') +
-          (r.failed.length ? `. ATTENZIONE: ${r.failed.length} file non copiati.` : '')
+        tp('resDone', { copied: r.copied }) +
+          (r.dbSnapshotDir ? tp('resDb', { dir: r.dbSnapshotDir }) : '') +
+          (r.failed.length ? tp('resFail', { n: r.failed.length }) : '')
       );
       setPlan(null);
     } catch (err) {
@@ -80,43 +85,36 @@ export function BackupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Backup Smart Incrementale</h1>
-        <p className="text-sm text-muted-foreground">
-          Copia il database di Rekordbox e solo i file musicali nuovi o modificati. Secondi, non ore.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert>
         <ShieldCheck className="h-4 w-4" />
-        <AlertTitle>Operazione sicura</AlertTitle>
-        <AlertDescription>
-          Il backup legge soltanto: i tuoi originali non vengono modificati né spostati.
-        </AlertDescription>
+        <AlertTitle>{tp('safeTitle')}</AlertTitle>
+        <AlertDescription>{tp('safeBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Scegli le cartelle</CardTitle>
-          <CardDescription>
-            Consiglio: seleziona anche master.db e options.json — options.json serve per poter
-            rileggere il database in futuro.
-          </CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <PathField label="Cartella musica" value={musicDir} onBrowse={() => pickDir(setMusicDir)} />
-          <PathField label="Cartella di backup (destinazione)" value={backupDir} onBrowse={() => pickDir(setBackupDir)} />
+          <PathField label={tp('fMusic')} value={musicDir} onBrowse={() => pickDir(setMusicDir)} />
+          <PathField label={tp('fBackup')} value={backupDir} onBrowse={() => pickDir(setBackupDir)} />
           <PathField
-            label="master.db (opzionale ma consigliato)"
+            label={tp('fMasterDb')}
             value={masterDb}
             onBrowse={() => pickFile(setMasterDb, 'master.db', ['db'])}
           />
           <PathField
-            label="options.json (opzionale ma consigliato)"
+            label={tp('fOptions')}
             value={optionsJson}
             onBrowse={() => pickFile(setOptionsJson, 'options.json', ['json'])}
           />
           <Button onClick={doPlan} disabled={!musicDir || !backupDir || busy}>
-            Calcola anteprima
+            {tp('calc')}
           </Button>
           <JobProgressBar active={busy} />
         </CardContent>
@@ -125,33 +123,31 @@ export function BackupPage() {
       {plan && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Anteprima (nessun file toccato finora)</CardTitle>
+            <CardTitle>{tp('step2')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm">
-              Scansionati <b>{plan.scannedFiles.toLocaleString('it-IT')}</b> file. Da copiare:{' '}
-              <b>{plan.toCopy.toLocaleString('it-IT')}</b> ({formatBytes(plan.totalBytes)}).
-              {plan.dbSnapshotDir && (
-                <>
-                  {' '}
-                  Il database Rekordbox verrà salvato in <code className="text-xs">{plan.dbSnapshotDir}</code>.
-                </>
-              )}
+              {tp('planLine', {
+                scanned: plan.scannedFiles.toLocaleString(locale),
+                toCopy: plan.toCopy.toLocaleString(locale),
+                size: formatBytes(plan.totalBytes)
+              })}
+              {plan.dbSnapshotDir && <> {tp('planDb', { dir: plan.dbSnapshotDir })}</>}
             </p>
             {plan.preview.length > 0 && (
               <div className="max-h-40 overflow-auto rounded-md border p-2 text-xs text-muted-foreground">
                 {plan.preview.map((i) => (
                   <div key={i.src}>
-                    [{i.reason === 'new' ? 'nuovo' : 'modificato'}] {i.src}
+                    [{i.reason === 'new' ? tp('reasonNew') : tp('reasonMod')}] {i.src}
                   </div>
                 ))}
                 {plan.toCopy > plan.preview.length && (
-                  <div>… e altri {(plan.toCopy - plan.preview.length).toLocaleString('it-IT')} file</div>
+                  <div>{tp('more', { n: (plan.toCopy - plan.preview.length).toLocaleString(locale) })}</div>
                 )}
               </div>
             )}
             <Button onClick={doExecute} disabled={busy}>
-              <HardDriveDownload /> Esegui il backup
+              <HardDriveDownload /> {tp('run')}
             </Button>
           </CardContent>
         </Card>
@@ -180,13 +176,14 @@ export function PathField({
   value: string;
   onBrowse: () => void;
 }) {
+  const { locale } = useAppState();
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
       <div className="flex gap-2">
-        <Input value={value} readOnly placeholder="Nessun percorso selezionato" />
+        <Input value={value} readOnly placeholder="—" />
         <Button variant="outline" onClick={onBrowse}>
-          Sfoglia…
+          {t(locale, 'common.browse')}
         </Button>
       </div>
     </div>

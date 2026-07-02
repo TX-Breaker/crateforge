@@ -7,6 +7,8 @@ import { DangerConfirmDialog } from '@/components/DangerConfirmDialog';
 import { JobProgressBar } from '@/components/JobProgress';
 import { PathField } from '@/pages/BackupPage';
 import { formatBytes } from '@/lib/utils';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface Orphan {
   path: string;
@@ -26,9 +28,12 @@ const PAGE_SIZE = 100;
 /**
  * Cacciatore di File Orfani (§6 Fase 1.2). Il flusso è: scansione → selezione
  * → anteprima (dry-run) → doppia conferma → spostamento in quarantena.
- * Nessuna cancellazione definitiva: la quarantena è reversibile.
+ * L'eliminazione definitiva esiste solo con le "scritture dirette" (opt-in).
  */
 export function OrphansPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'orphans', k, p);
+  const tc = (k: string, p?: Record<string, string | number>) => pageText(locale, 'common', k, p);
   const [musicDir, setMusicDir] = useState('');
   const [quarantineDir, setQuarantineDir] = useState('');
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -91,6 +96,15 @@ export function OrphansPage() {
     setSelected(new Set(result.orphans.map((o) => o.path)));
   };
 
+  const removeFromList = (files: string[], failed: { path: string }[]) => {
+    const failedSet = new Set(failed.map((f) => f.path));
+    const moved = new Set(files.filter((f) => !failedSet.has(f)));
+    setResult((prev) =>
+      prev ? { ...prev, orphans: prev.orphans.filter((o) => !moved.has(o.path)) } : prev
+    );
+    setSelected(new Set());
+  };
+
   const doQuarantine = async () => {
     setBusy(true);
     setError(null);
@@ -98,21 +112,11 @@ export function OrphansPage() {
       const files = [...selected];
       const r = await window.crateforge.orphans.quarantine(files, quarantineDir, false);
       setOutcome(
-        `Spostati in quarantena ${r.moved} file su ${files.length} (cartella: ${r.quarantineDir}).` +
-          (r.failed.length ? ` ATTENZIONE: ${r.failed.length} non spostati.` : '') +
-          ' Puoi ripristinarli in qualsiasi momento: nessun file è stato eliminato.'
+        tp('outMoved', { moved: r.moved, tot: files.length, dir: r.quarantineDir }) +
+          (r.failed.length ? tp('outMovedFail', { n: r.failed.length }) : '') +
+          tp('outMovedTail')
       );
-      // Togli dalla lista quelli spostati con successo
-      const failedSet = new Set(r.failed.map((f: { path: string }) => f.path));
-      setResult((prev) =>
-        prev
-          ? {
-              ...prev,
-              orphans: prev.orphans.filter((o) => !selected.has(o.path) || failedSet.has(o.path))
-            }
-          : prev
-      );
-      setSelected(new Set());
+      removeFromList(files, r.failed);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -127,19 +131,10 @@ export function OrphansPage() {
       const files = [...selected];
       const r = await window.crateforge.orphans.remove(files, false);
       setOutcome(
-        `ELIMINATI DEFINITIVAMENTE ${r.deleted} file (${formatBytes(r.freedBytes)} liberati).` +
-          (r.failed.length ? ` ATTENZIONE: ${r.failed.length} non eliminati.` : '')
+        tp('outDeleted', { n: r.deleted, size: formatBytes(r.freedBytes) }) +
+          (r.failed.length ? tp('outDelFail', { n: r.failed.length }) : '')
       );
-      const failedSet = new Set(r.failed.map((f: { path: string }) => f.path));
-      setResult((prev) =>
-        prev
-          ? {
-              ...prev,
-              orphans: prev.orphans.filter((o) => !selected.has(o.path) || failedSet.has(o.path))
-            }
-          : prev
-      );
-      setSelected(new Set());
+      removeFromList(files, r.failed);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -150,32 +145,24 @@ export function OrphansPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Cacciatore di File Orfani</h1>
-        <p className="text-sm text-muted-foreground">
-          Trova i file audio presenti sul disco ma assenti dalla tua libreria Rekordbox.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert>
         <ShieldCheck className="h-4 w-4" />
-        <AlertTitle>Come funziona la quarantena</AlertTitle>
-        <AlertDescription>
-          Di default CrateForge non elimina i file: li sposta in una cartella di quarantena
-          datata, da cui puoi ripristinarli quando vuoi. (L'eliminazione definitiva esiste solo
-          se attivi le "scritture dirette" nelle Impostazioni, con doppia conferma.) La scansione
-          confronta il disco con la libreria che hai importato: importa prima la libreria dalla
-          Panoramica.
-        </AlertDescription>
+        <AlertTitle>{tp('howTitle')}</AlertTitle>
+        <AlertDescription>{tp('howBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Scansiona la cartella musica</CardTitle>
+          <CardTitle>{tp('step1')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <PathField label="Cartella musica" value={musicDir} onBrowse={() => pickDir(setMusicDir)} />
+          <PathField label={tp('fMusic')} value={musicDir} onBrowse={() => pickDir(setMusicDir)} />
           <Button onClick={doScan} disabled={!musicDir || busy}>
-            <FolderSearch /> Avvia scansione
+            <FolderSearch /> {tp('scan')}
           </Button>
           <JobProgressBar active={busy} />
         </CardContent>
@@ -184,30 +171,33 @@ export function OrphansPage() {
       {result && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Risultato</CardTitle>
+            <CardTitle>{tp('step2')}</CardTitle>
             <CardDescription>
-              {result.scannedFiles.toLocaleString('it-IT')} file scansionati,{' '}
-              {result.knownTracks.toLocaleString('it-IT')} brani in libreria.{' '}
-              <b>{result.orphans.length.toLocaleString('it-IT')} orfani</b> — spazio recuperabile:{' '}
-              <b>{formatBytes(result.reclaimableBytes)}</b>.
+              {tp('resLine', {
+                scanned: result.scannedFiles.toLocaleString(locale),
+                known: result.knownTracks.toLocaleString(locale),
+                orphans: result.orphans.length.toLocaleString(locale),
+                space: formatBytes(result.reclaimableBytes)
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {result.orphans.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nessun file orfano: disco e libreria sono allineati. Ottimo lavoro.
-              </p>
+              <p className="text-sm text-muted-foreground">{tp('none')}</p>
             ) : (
               <>
                 <div className="flex items-center gap-3 text-sm">
                   <Button variant="outline" size="sm" onClick={selectAll}>
-                    Seleziona tutti
+                    {tc('selectAll')}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setSelected(new Set())}>
-                    Deseleziona
+                    {tc('deselectAll')}
                   </Button>
                   <span className="text-muted-foreground">
-                    {selected.size.toLocaleString('it-IT')} selezionati ({formatBytes(selectedBytes)})
+                    {tp('selCount', {
+                      n: selected.size.toLocaleString(locale),
+                      size: formatBytes(selectedBytes)
+                    })}
                   </span>
                 </div>
                 <div className="max-h-72 overflow-auto rounded-md border">
@@ -233,22 +223,22 @@ export function OrphansPage() {
                       disabled={page === 0}
                       onClick={() => setPage((p) => p - 1)}
                     >
-                      ← Precedenti
+                      {tc('prev')}
                     </Button>
-                    Pagina {page + 1} di {Math.ceil(result.orphans.length / PAGE_SIZE)}
+                    {tc('pageOf', { p: page + 1, tot: Math.ceil(result.orphans.length / PAGE_SIZE) })}
                     <Button
                       variant="outline"
                       size="sm"
                       disabled={(page + 1) * PAGE_SIZE >= result.orphans.length}
                       onClick={() => setPage((p) => p + 1)}
                     >
-                      Successivi →
+                      {tc('next')}
                     </Button>
                   </div>
                 )}
                 <div className="space-y-3 border-t pt-3">
                   <PathField
-                    label="Cartella di quarantena (dove spostare i file)"
+                    label={tp('fQuarantine')}
                     value={quarantineDir}
                     onBrowse={() => pickDir(setQuarantineDir)}
                   />
@@ -258,7 +248,7 @@ export function OrphansPage() {
                       disabled={selected.size === 0 || !quarantineDir || busy}
                       onClick={() => setConfirmOpen(true)}
                     >
-                      <FileWarning /> Sposta in quarantena ({selected.size})
+                      <FileWarning /> {tp('moveBtn', { n: selected.size })}
                     </Button>
                     {directWrites && (
                       <Button
@@ -266,15 +256,12 @@ export function OrphansPage() {
                         disabled={selected.size === 0 || busy}
                         onClick={() => setDeleteOpen(true)}
                       >
-                        <Trash2 /> Elimina definitivamente ({selected.size})
+                        <Trash2 /> {tp('delBtn', { n: selected.size })}
                       </Button>
                     )}
                   </div>
                   {directWrites && (
-                    <p className="text-xs text-muted-foreground">
-                      L'eliminazione definitiva è attiva perché hai abilitato le scritture dirette
-                      nelle Impostazioni. La quarantena resta la strada consigliata: è reversibile.
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tp('directNote')}</p>
                   )}
                 </div>
               </>
@@ -297,21 +284,19 @@ export function OrphansPage() {
       <DangerConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Eliminare DEFINITIVAMENTE questi file?"
+        title={tp('delTitle')}
         confirmWord="ELIMINA"
-        confirmLabel={`Elimina per sempre ${selected.size} file`}
+        confirmLabel={tp('delLabel', { n: selected.size })}
         onConfirm={doDelete}
         description={
           <>
             <p>
-              Stai per eliminare <b>per sempre</b>{' '}
-              <b>{selected.size.toLocaleString('it-IT')} file</b> ({formatBytes(selectedBytes)})
-              dai tuoi FILE ORIGINALI. Non c'è cestino, non c'è quarantena, non c'è ritorno.
+              {tp('delBody1', {
+                n: selected.size.toLocaleString(locale),
+                size: formatBytes(selectedBytes)
+              })}
             </p>
-            <p>
-              Se hai anche il minimo dubbio, usa invece la quarantena: fa spazio uguale ma resta
-              reversibile.
-            </p>
+            <p>{tp('delBody2')}</p>
           </>
         }
       />
@@ -319,21 +304,20 @@ export function OrphansPage() {
       <DangerConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Spostare i file in quarantena?"
+        title={tp('qTitle')}
         confirmWord="SPOSTA"
-        confirmLabel={`Sposta ${selected.size} file`}
+        confirmLabel={tp('qLabel', { n: selected.size })}
         onConfirm={doQuarantine}
         description={
           <>
             <p>
-              Stai per spostare <b>{selected.size.toLocaleString('it-IT')} file</b> (
-              {formatBytes(selectedBytes)}) dalla cartella musica alla quarantena:
+              {tp('qBody1', {
+                n: selected.size.toLocaleString(locale),
+                size: formatBytes(selectedBytes)
+              })}
             </p>
             <p className="font-mono text-xs">{quarantineDir}</p>
-            <p>
-              I file NON vengono eliminati e potrai ripristinarli. Se alcuni servono ad altri
-              programmi, escludili prima dalla selezione.
-            </p>
+            <p>{tp('qBody2')}</p>
           </>
         }
       />

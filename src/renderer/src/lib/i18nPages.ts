@@ -5,14 +5,25 @@ import type { Locale } from './i18n';
  * in PROGRESS.md). Pattern: ogni pagina ha il suo namespace; le pagine non
  * ancora migrate restano in italiano finché non vengono aggiunte qui.
  *
- * Per migrare una pagina: aggiungi il namespace, poi nella pagina
- *   const tp = usePageText('dashboard');  →  tp('title')
+ * Per migrare una pagina (vedi Dashboard.tsx come pilota):
+ *   const { locale } = useAppState();
+ *   const tp = (k: string, p?: Params) => pageText(locale, 'nomepagina', k, p);
+ * I segnaposto {x} vengono sostituiti dai params: tp('done', { n: 3 }).
  */
 
+type Params = Record<string, string | number>;
 type PageDict = Record<string, Record<string, string>>;
 
 const pages: Record<Locale, PageDict> = {
   it: {
+    common: {
+      prev: '← Precedenti',
+      next: 'Successivi →',
+      pageOf: 'Pagina {p} di {tot}',
+      selectAll: 'Seleziona tutti',
+      deselectAll: 'Deseleziona',
+      warnPrefix: 'ATTENZIONE:'
+    },
     dashboard: {
       title: 'Panoramica',
       subtitle: 'CrateForge è il meccanico della tua libreria: sistemi qui, poi suoni in Rekordbox.',
@@ -28,9 +39,75 @@ const pages: Record<Locale, PageDict> = {
       importXmlBtn: 'Importa collection XML',
       importDbBtn: 'Leggi master.db direttamente',
       lastIngest: 'Ultima importazione'
+    },
+    backup: {
+      title: 'Backup Smart Incrementale',
+      subtitle: 'Copia il database di Rekordbox e solo i file musicali nuovi o modificati. Secondi, non ore.',
+      safeTitle: 'Operazione sicura',
+      safeBody: 'Il backup legge soltanto: i tuoi originali non vengono modificati né spostati.',
+      step1: '1 · Scegli le cartelle',
+      step1Desc:
+        'Consiglio: seleziona anche master.db e options.json — options.json serve per poter rileggere il database in futuro.',
+      fMusic: 'Cartella musica',
+      fBackup: 'Cartella di backup (destinazione)',
+      fMasterDb: 'master.db (opzionale ma consigliato)',
+      fOptions: 'options.json (opzionale ma consigliato)',
+      calc: 'Calcola anteprima',
+      step2: '2 · Anteprima (nessun file toccato finora)',
+      planLine: 'Scansionati {scanned} file. Da copiare: {toCopy} ({size}).',
+      planDb: 'Il database Rekordbox verrà salvato in {dir}.',
+      reasonNew: 'nuovo',
+      reasonMod: 'modificato',
+      more: '… e altri {n} file',
+      run: 'Esegui il backup',
+      resDone: 'Backup completato: {copied} file copiati',
+      resDb: '. Database salvato in {dir}',
+      resFail: '. ATTENZIONE: {n} file non copiati.'
+    },
+    orphans: {
+      title: 'Cacciatore di File Orfani',
+      subtitle: 'Trova i file audio presenti sul disco ma assenti dalla tua libreria Rekordbox.',
+      howTitle: 'Come funziona la quarantena',
+      howBody:
+        'Di default CrateForge non elimina i file: li sposta in una cartella di quarantena datata, da cui puoi ripristinarli quando vuoi. (L\'eliminazione definitiva esiste solo se attivi le "scritture dirette" nelle Impostazioni, con doppia conferma.) La scansione confronta il disco con la libreria che hai importato: importa prima la libreria dalla Panoramica.',
+      step1: '1 · Scansiona la cartella musica',
+      fMusic: 'Cartella musica',
+      scan: 'Avvia scansione',
+      step2: '2 · Risultato',
+      resLine: '{scanned} file scansionati, {known} brani in libreria. {orphans} orfani — spazio recuperabile: {space}.',
+      none: 'Nessun file orfano: disco e libreria sono allineati. Ottimo lavoro.',
+      selCount: '{n} selezionati ({size})',
+      fQuarantine: 'Cartella di quarantena (dove spostare i file)',
+      moveBtn: 'Sposta in quarantena ({n})',
+      delBtn: 'Elimina definitivamente ({n})',
+      directNote:
+        "L'eliminazione definitiva è attiva perché hai abilitato le scritture dirette nelle Impostazioni. La quarantena resta la strada consigliata: è reversibile.",
+      outMoved: 'Spostati in quarantena {moved} file su {tot} (cartella: {dir}).',
+      outMovedFail: ' ATTENZIONE: {n} non spostati.',
+      outMovedTail: ' Puoi ripristinarli in qualsiasi momento: nessun file è stato eliminato.',
+      outDeleted: 'ELIMINATI DEFINITIVAMENTE {n} file ({size} liberati).',
+      outDelFail: ' ATTENZIONE: {n} non eliminati.',
+      delTitle: 'Eliminare DEFINITIVAMENTE questi file?',
+      delLabel: 'Elimina per sempre {n} file',
+      delBody1:
+        "Stai per eliminare per sempre {n} file ({size}) dai tuoi FILE ORIGINALI. Non c'è cestino, non c'è quarantena, non c'è ritorno.",
+      delBody2: 'Se hai anche il minimo dubbio, usa invece la quarantena: fa spazio uguale ma resta reversibile.',
+      qTitle: 'Spostare i file in quarantena?',
+      qLabel: 'Sposta {n} file',
+      qBody1: 'Stai per spostare {n} file ({size}) dalla cartella musica alla quarantena:',
+      qBody2:
+        'I file NON vengono eliminati e potrai ripristinarli. Se alcuni servono ad altri programmi, escludili prima dalla selezione.'
     }
   },
   en: {
+    common: {
+      prev: '← Previous',
+      next: 'Next →',
+      pageOf: 'Page {p} of {tot}',
+      selectAll: 'Select all',
+      deselectAll: 'Deselect',
+      warnPrefix: 'WARNING:'
+    },
     dashboard: {
       title: 'Overview',
       subtitle: "CrateForge is your library's mechanic: fix things here, then play in Rekordbox.",
@@ -39,16 +116,82 @@ const pages: Record<Locale, PageDict> = {
       statReview: 'Needs review',
       xmlOnlyTitle: 'XML-only mode active',
       xmlOnlyBody:
-        "The direct Rekordbox database reader is not available on this computer (on Windows the antivirus sometimes quarantines it: check Windows Defender notifications and restore the file, or add the app folder to the exclusions). You can still do everything by exporting the collection as XML from Rekordbox: File → Export Collection in xml format, then import it below.",
+        'The direct Rekordbox database reader is not available on this computer (on Windows the antivirus sometimes quarantines it: check Windows Defender notifications and restore the file, or add the app folder to the exclusions). You can still do everything by exporting the collection as XML from Rekordbox: File → Export Collection in xml format, then import it below.',
       importTitle: 'Import your library',
       importDesc:
         'The library is copied into the internal CrateForge database. Rekordbox files are opened read-only: your originals are never modified.',
       importXmlBtn: 'Import collection XML',
       importDbBtn: 'Read master.db directly',
       lastIngest: 'Last import'
+    },
+    backup: {
+      title: 'Smart Incremental Backup',
+      subtitle: 'Copies the Rekordbox database and only new or changed music files. Seconds, not hours.',
+      safeTitle: 'Safe operation',
+      safeBody: 'The backup only reads: your originals are never modified or moved.',
+      step1: '1 · Choose folders',
+      step1Desc:
+        'Tip: also select master.db and options.json — options.json is needed to read the database again in the future.',
+      fMusic: 'Music folder',
+      fBackup: 'Backup folder (destination)',
+      fMasterDb: 'master.db (optional but recommended)',
+      fOptions: 'options.json (optional but recommended)',
+      calc: 'Compute preview',
+      step2: '2 · Preview (no file touched yet)',
+      planLine: 'Scanned {scanned} files. To copy: {toCopy} ({size}).',
+      planDb: 'The Rekordbox database will be saved to {dir}.',
+      reasonNew: 'new',
+      reasonMod: 'modified',
+      more: '… and {n} more files',
+      run: 'Run backup',
+      resDone: 'Backup complete: {copied} files copied',
+      resDb: '. Database saved to {dir}',
+      resFail: '. WARNING: {n} files not copied.'
+    },
+    orphans: {
+      title: 'Orphan File Hunter',
+      subtitle: 'Finds audio files that are on disk but missing from your Rekordbox library.',
+      howTitle: 'How quarantine works',
+      howBody:
+        'By default CrateForge does not delete files: it moves them into a dated quarantine folder you can restore from at any time. (Permanent deletion only exists if you enable "direct writes" in Settings, with double confirmation.) The scan compares the disk with the library you imported: import your library from the Overview first.',
+      step1: '1 · Scan the music folder',
+      fMusic: 'Music folder',
+      scan: 'Start scan',
+      step2: '2 · Result',
+      resLine: '{scanned} files scanned, {known} tracks in library. {orphans} orphans — reclaimable space: {space}.',
+      none: 'No orphan files: disk and library are aligned. Nice work.',
+      selCount: '{n} selected ({size})',
+      fQuarantine: 'Quarantine folder (where files are moved)',
+      moveBtn: 'Move to quarantine ({n})',
+      delBtn: 'Delete permanently ({n})',
+      directNote:
+        'Permanent deletion is available because you enabled direct writes in Settings. Quarantine remains the recommended path: it is reversible.',
+      outMoved: 'Moved {moved} of {tot} files to quarantine (folder: {dir}).',
+      outMovedFail: ' WARNING: {n} not moved.',
+      outMovedTail: ' You can restore them at any time: no file was deleted.',
+      outDeleted: 'PERMANENTLY DELETED {n} files ({size} freed).',
+      outDelFail: ' WARNING: {n} not deleted.',
+      delTitle: 'Permanently delete these files?',
+      delLabel: 'Delete {n} files forever',
+      delBody1:
+        'You are about to delete {n} files ({size}) from your ORIGINAL FILES, forever. There is no recycle bin, no quarantine, no way back.',
+      delBody2: 'If you have even the slightest doubt, use quarantine instead: same space freed, but reversible.',
+      qTitle: 'Move files to quarantine?',
+      qLabel: 'Move {n} files',
+      qBody1: 'You are about to move {n} files ({size}) from the music folder to quarantine:',
+      qBody2:
+        'Files are NOT deleted and can be restored. If other programs need some of them, exclude them from the selection first.'
     }
   },
   fr: {
+    common: {
+      prev: '← Précédents',
+      next: 'Suivants →',
+      pageOf: 'Page {p} sur {tot}',
+      selectAll: 'Tout sélectionner',
+      deselectAll: 'Désélectionner',
+      warnPrefix: 'ATTENTION :'
+    },
     dashboard: {
       title: "Vue d'ensemble",
       subtitle: 'CrateForge est le mécanicien de votre bibliothèque : réparez ici, puis jouez dans Rekordbox.',
@@ -64,9 +207,75 @@ const pages: Record<Locale, PageDict> = {
       importXmlBtn: 'Importer la collection XML',
       importDbBtn: 'Lire master.db directement',
       lastIngest: 'Dernier import'
+    },
+    backup: {
+      title: 'Sauvegarde intelligente incrémentale',
+      subtitle: 'Copie la base Rekordbox et seulement les fichiers musicaux nouveaux ou modifiés. Des secondes, pas des heures.',
+      safeTitle: 'Opération sûre',
+      safeBody: 'La sauvegarde ne fait que lire : vos originaux ne sont ni modifiés ni déplacés.',
+      step1: '1 · Choisissez les dossiers',
+      step1Desc:
+        'Conseil : sélectionnez aussi master.db et options.json — options.json est nécessaire pour relire la base à l\'avenir.',
+      fMusic: 'Dossier musique',
+      fBackup: 'Dossier de sauvegarde (destination)',
+      fMasterDb: 'master.db (facultatif mais recommandé)',
+      fOptions: 'options.json (facultatif mais recommandé)',
+      calc: "Calculer l'aperçu",
+      step2: '2 · Aperçu (aucun fichier touché pour l\'instant)',
+      planLine: '{scanned} fichiers analysés. À copier : {toCopy} ({size}).',
+      planDb: 'La base Rekordbox sera enregistrée dans {dir}.',
+      reasonNew: 'nouveau',
+      reasonMod: 'modifié',
+      more: '… et {n} autres fichiers',
+      run: 'Lancer la sauvegarde',
+      resDone: 'Sauvegarde terminée : {copied} fichiers copiés',
+      resDb: '. Base enregistrée dans {dir}',
+      resFail: '. ATTENTION : {n} fichiers non copiés.'
+    },
+    orphans: {
+      title: 'Chasseur de fichiers orphelins',
+      subtitle: 'Trouve les fichiers audio présents sur le disque mais absents de votre bibliothèque Rekordbox.',
+      howTitle: 'Comment fonctionne la quarantaine',
+      howBody:
+        "Par défaut CrateForge ne supprime pas les fichiers : il les déplace dans un dossier de quarantaine daté, d'où vous pouvez les restaurer à tout moment. (La suppression définitive n'existe que si vous activez les « écritures directes » dans les Paramètres, avec double confirmation.) L'analyse compare le disque avec la bibliothèque importée : importez d'abord votre bibliothèque depuis la Vue d'ensemble.",
+      step1: '1 · Analysez le dossier musique',
+      fMusic: 'Dossier musique',
+      scan: "Lancer l'analyse",
+      step2: '2 · Résultat',
+      resLine: '{scanned} fichiers analysés, {known} titres en bibliothèque. {orphans} orphelins — espace récupérable : {space}.',
+      none: 'Aucun fichier orphelin : disque et bibliothèque sont alignés. Beau travail.',
+      selCount: '{n} sélectionnés ({size})',
+      fQuarantine: 'Dossier de quarantaine (où déplacer les fichiers)',
+      moveBtn: 'Mettre en quarantaine ({n})',
+      delBtn: 'Supprimer définitivement ({n})',
+      directNote:
+        'La suppression définitive est disponible car vous avez activé les écritures directes dans les Paramètres. La quarantaine reste la voie recommandée : elle est réversible.',
+      outMoved: '{moved} fichiers sur {tot} mis en quarantaine (dossier : {dir}).',
+      outMovedFail: ' ATTENTION : {n} non déplacés.',
+      outMovedTail: ' Vous pouvez les restaurer à tout moment : aucun fichier n\'a été supprimé.',
+      outDeleted: 'SUPPRIMÉS DÉFINITIVEMENT : {n} fichiers ({size} libérés).',
+      outDelFail: ' ATTENTION : {n} non supprimés.',
+      delTitle: 'Supprimer DÉFINITIVEMENT ces fichiers ?',
+      delLabel: 'Supprimer {n} fichiers pour toujours',
+      delBody1:
+        "Vous êtes sur le point de supprimer pour toujours {n} fichiers ({size}) de vos FICHIERS ORIGINAUX. Pas de corbeille, pas de quarantaine, pas de retour.",
+      delBody2: 'Au moindre doute, utilisez plutôt la quarantaine : même espace libéré, mais réversible.',
+      qTitle: 'Mettre les fichiers en quarantaine ?',
+      qLabel: 'Déplacer {n} fichiers',
+      qBody1: 'Vous allez déplacer {n} fichiers ({size}) du dossier musique vers la quarantaine :',
+      qBody2:
+        "Les fichiers ne sont PAS supprimés et pourront être restaurés. Si d'autres programmes en ont besoin, excluez-les d'abord de la sélection."
     }
   },
   de: {
+    common: {
+      prev: '← Zurück',
+      next: 'Weiter →',
+      pageOf: 'Seite {p} von {tot}',
+      selectAll: 'Alle auswählen',
+      deselectAll: 'Abwählen',
+      warnPrefix: 'ACHTUNG:'
+    },
     dashboard: {
       title: 'Übersicht',
       subtitle: 'CrateForge ist der Mechaniker deiner Bibliothek: hier reparieren, dann in Rekordbox auflegen.',
@@ -82,10 +291,74 @@ const pages: Record<Locale, PageDict> = {
       importXmlBtn: 'Collection-XML importieren',
       importDbBtn: 'master.db direkt lesen',
       lastIngest: 'Letzter Import'
+    },
+    backup: {
+      title: 'Intelligentes inkrementelles Backup',
+      subtitle: 'Kopiert die Rekordbox-Datenbank und nur neue oder geänderte Musikdateien. Sekunden, nicht Stunden.',
+      safeTitle: 'Sichere Operation',
+      safeBody: 'Das Backup liest nur: deine Originale werden weder verändert noch verschoben.',
+      step1: '1 · Ordner wählen',
+      step1Desc:
+        'Tipp: Wähle auch master.db und options.json — options.json wird gebraucht, um die Datenbank später wieder zu lesen.',
+      fMusic: 'Musikordner',
+      fBackup: 'Backup-Ordner (Ziel)',
+      fMasterDb: 'master.db (optional, empfohlen)',
+      fOptions: 'options.json (optional, empfohlen)',
+      calc: 'Vorschau berechnen',
+      step2: '2 · Vorschau (noch keine Datei angefasst)',
+      planLine: '{scanned} Dateien gescannt. Zu kopieren: {toCopy} ({size}).',
+      planDb: 'Die Rekordbox-Datenbank wird gespeichert unter {dir}.',
+      reasonNew: 'neu',
+      reasonMod: 'geändert',
+      more: '… und {n} weitere Dateien',
+      run: 'Backup ausführen',
+      resDone: 'Backup abgeschlossen: {copied} Dateien kopiert',
+      resDb: '. Datenbank gespeichert unter {dir}',
+      resFail: '. ACHTUNG: {n} Dateien nicht kopiert.'
+    },
+    orphans: {
+      title: 'Jäger verwaister Dateien',
+      subtitle: 'Findet Audiodateien, die auf der Festplatte liegen, aber in deiner Rekordbox-Bibliothek fehlen.',
+      howTitle: 'So funktioniert die Quarantäne',
+      howBody:
+        'Standardmäßig löscht CrateForge keine Dateien: Es verschiebt sie in einen datierten Quarantäne-Ordner, aus dem du sie jederzeit wiederherstellen kannst. (Endgültiges Löschen gibt es nur, wenn du in den Einstellungen die „direkten Schreibzugriffe" aktivierst, mit doppelter Bestätigung.) Der Scan vergleicht die Festplatte mit der importierten Bibliothek: Importiere zuerst deine Bibliothek über die Übersicht.',
+      step1: '1 · Musikordner scannen',
+      fMusic: 'Musikordner',
+      scan: 'Scan starten',
+      step2: '2 · Ergebnis',
+      resLine: '{scanned} Dateien gescannt, {known} Titel in der Bibliothek. {orphans} verwaiste — freigebbarer Speicher: {space}.',
+      none: 'Keine verwaisten Dateien: Festplatte und Bibliothek sind synchron. Gute Arbeit.',
+      selCount: '{n} ausgewählt ({size})',
+      fQuarantine: 'Quarantäne-Ordner (wohin verschoben wird)',
+      moveBtn: 'In Quarantäne verschieben ({n})',
+      delBtn: 'Endgültig löschen ({n})',
+      directNote:
+        'Endgültiges Löschen ist verfügbar, weil du direkte Schreibzugriffe in den Einstellungen aktiviert hast. Die Quarantäne bleibt der empfohlene Weg: sie ist umkehrbar.',
+      outMoved: '{moved} von {tot} Dateien in Quarantäne verschoben (Ordner: {dir}).',
+      outMovedFail: ' ACHTUNG: {n} nicht verschoben.',
+      outMovedTail: ' Du kannst sie jederzeit wiederherstellen: keine Datei wurde gelöscht.',
+      outDeleted: 'ENDGÜLTIG GELÖSCHT: {n} Dateien ({size} freigegeben).',
+      outDelFail: ' ACHTUNG: {n} nicht gelöscht.',
+      delTitle: 'Diese Dateien ENDGÜLTIG löschen?',
+      delLabel: '{n} Dateien für immer löschen',
+      delBody1:
+        'Du bist dabei, {n} Dateien ({size}) für immer aus deinen ORIGINALDATEIEN zu löschen. Kein Papierkorb, keine Quarantäne, kein Zurück.',
+      delBody2: 'Beim geringsten Zweifel nutze stattdessen die Quarantäne: gleicher Platzgewinn, aber umkehrbar.',
+      qTitle: 'Dateien in Quarantäne verschieben?',
+      qLabel: '{n} Dateien verschieben',
+      qBody1: 'Du verschiebst {n} Dateien ({size}) vom Musikordner in die Quarantäne:',
+      qBody2:
+        'Die Dateien werden NICHT gelöscht und können wiederhergestellt werden. Falls andere Programme einige davon brauchen, nimm sie vorher aus der Auswahl.'
     }
   }
 };
 
-export function pageText(locale: Locale, page: string, key: string): string {
-  return pages[locale]?.[page]?.[key] ?? pages.it[page]?.[key] ?? key;
+export function pageText(locale: Locale, page: string, key: string, params?: Params): string {
+  let s = pages[locale]?.[page]?.[key] ?? pages.it[page]?.[key] ?? key;
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      s = s.split(`{${k}}`).join(String(v));
+    }
+  }
+  return s;
 }
