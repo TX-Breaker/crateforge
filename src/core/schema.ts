@@ -1,0 +1,146 @@
+import type BetterSqlite3 from 'better-sqlite3';
+
+/**
+ * Schema UDM (Universal Data Model).
+ *
+ * Ownership dello schema: SOLO Node (questo modulo). Il sidecar Python riceve
+ * il percorso del file via --udm-path, apre il DB già migrato e scrive
+ * esclusivamente nelle tabelle di ingestion (tracks, playlists,
+ * playlist_tracks, cues, ingest_runs) — mai DDL.
+ *
+ * Writer-ownership per tabella:
+ *  - tracks / playlists / playlist_tracks / cues / ingest_runs → scrittore di
+ *    ingestion (sidecar Python per master.db, Node per il fallback XML).
+ *    I due percorsi non girano mai in concorrenza: Node serializza i job.
+ *  - settings / jobs / oplog → SOLO Node.
+ */
+export const SCHEMA_VERSION = 1;
+
+const MIGRATIONS: Record<number, string> = {
+  1: `
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tracks (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL CHECK (source IN ('masterdb', 'xml')),
+      source_id TEXT,
+      title TEXT,
+      artist TEXT,
+      album TEXT,
+      genre TEXT,
+      year INTEGER,
+      bpm REAL,
+      musical_key TEXT,
+      camelot TEXT,
+      duration_s REAL,
+      path TEXT,
+      filesize INTEGER,
+      file_mtime INTEGER,
+      version_label TEXT,
+      has_tag_issues INTEGER NOT NULL DEFAULT 0,
+      needs_review INTEGER NOT NULL DEFAULT 0,
+      review_reason TEXT,
+      acoustic_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (source, source_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
+    CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
+    CREATE INDEX IF NOT EXISTS idx_tracks_review ON tracks(needs_review);
+
+    CREATE TABLE IF NOT EXISTS playlists (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL CHECK (source IN ('masterdb', 'xml')),
+      source_id TEXT,
+      name TEXT NOT NULL,
+      parent_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE,
+      is_folder INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (source, source_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS playlist_tracks (
+      playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+      track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      PRIMARY KEY (playlist_id, position)
+    );
+
+    CREATE TABLE IF NOT EXISTS cues (
+      id INTEGER PRIMARY KEY,
+      track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      cue_type TEXT NOT NULL CHECK (cue_type IN ('hot', 'memory', 'loop')),
+      cue_index INTEGER,
+      position_ms REAL NOT NULL,
+      length_ms REAL,
+      color TEXT,
+      label TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_cues_track ON cues(track_id);
+
+    CREATE TABLE IF NOT EXISTS ingest_runs (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL DEFAULT 'running',
+      track_count INTEGER,
+      error TEXT
+    );
+
+    -- Tabelle applicative: SOLO Node.
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS jobs (
+      id INTEGER PRIMARY KEY,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      dry_run INTEGER NOT NULL DEFAULT 1,
+      started_at TEXT,
+      finished_at TEXT,
+      detail TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS oplog (
+      id INTEGER PRIMARY KEY,
+      ts TEXT NOT NULL DEFAULT (datetime('now')),
+      operation TEXT NOT NULL,
+      target TEXT,
+      outcome TEXT NOT NULL,
+      detail TEXT
+    );
+  `
+};
+
+export function migrate(db: BetterSqlite3.Database): void {
+  const current = getSchemaVersion(db);
+  for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
+    const sql = MIGRATIONS[v];
+    if (!sql) continue;
+    const apply = db.transaction(() => {
+      db.exec(sql);
+      db.prepare(
+        `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      ).run(String(v));
+    });
+    apply();
+  }
+}
+
+export function getSchemaVersion(db: BetterSqlite3.Database): number {
+  const hasMeta = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'`)
+    .get();
+  if (!hasMeta) return 0;
+  const row = db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
+    | { value: string }
+    | undefined;
+  return row ? Number(row.value) : 0;
+}

@@ -1,0 +1,95 @@
+import type BetterSqlite3 from 'better-sqlite3';
+import type { TrackRow } from '@core/udm';
+
+export interface CueRow {
+  id: number;
+  track_id: number;
+  cue_type: 'hot' | 'memory' | 'loop';
+  cue_index: number | null;
+  position_ms: number;
+  length_ms: number | null;
+  color: string | null;
+  label: string | null;
+}
+
+export interface PlaylistRow {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  is_folder: number;
+  sort_order: number;
+}
+
+export interface ExportSelection {
+  /** id playlist da esportare; vuoto = tutte */
+  playlistIds?: number[];
+}
+
+/** Limiti del canale XML Rekordbox (§4): da mostrare PRIMA di ogni export. */
+export const REKORDBOX_XML_LIMITS = [
+  "L'import XML aggiunge/aggiorna i brani ma NON rimuove nulla dalla collection.",
+  'Vengono importate al massimo 8 hot cue per brano.',
+  'I colori delle memory cue, i MyTag e le smartlist NON passano.',
+  'I loop attivi NON passano.',
+  "L'import finale in Rekordbox è manuale: dovrai cliccare tu 'Import to Collection'."
+] as const;
+
+const PAGE = 1000;
+
+/** Itera i brani a pagine (mai tutta la libreria in un array). */
+export function* iterateTracks(
+  db: BetterSqlite3.Database,
+  sel: ExportSelection
+): Generator<TrackRow> {
+  const inPlaylists = sel.playlistIds && sel.playlistIds.length > 0;
+  const where = inPlaylists
+    ? `WHERE t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id IN (${sel
+        .playlistIds!.map(() => '?')
+        .join(',')}))`
+    : '';
+  const params = inPlaylists ? sel.playlistIds! : [];
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS c FROM tracks t ${where}`).get(...params) as { c: number }
+  ).c;
+  const stmt = db.prepare(`SELECT t.* FROM tracks t ${where} ORDER BY t.id LIMIT ? OFFSET ?`);
+  for (let offset = 0; offset < total; offset += PAGE) {
+    for (const row of stmt.all(...params, PAGE, offset) as TrackRow[]) {
+      yield row;
+    }
+  }
+}
+
+export function getCuesForTrack(db: BetterSqlite3.Database, trackId: number): CueRow[] {
+  return db
+    .prepare(`SELECT * FROM cues WHERE track_id = ? ORDER BY cue_type, cue_index, position_ms`)
+    .all(trackId) as CueRow[];
+}
+
+export function getPlaylists(db: BetterSqlite3.Database, sel: ExportSelection): PlaylistRow[] {
+  if (sel.playlistIds && sel.playlistIds.length > 0) {
+    const q = `SELECT id, name, parent_id, is_folder, sort_order FROM playlists
+               WHERE id IN (${sel.playlistIds.map(() => '?').join(',')}) ORDER BY sort_order`;
+    return db.prepare(q).all(...sel.playlistIds) as PlaylistRow[];
+  }
+  return db
+    .prepare(`SELECT id, name, parent_id, is_folder, sort_order FROM playlists ORDER BY sort_order`)
+    .all() as PlaylistRow[];
+}
+
+export function getPlaylistTrackIds(db: BetterSqlite3.Database, playlistId: number): number[] {
+  return (
+    db
+      .prepare(`SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position`)
+      .all(playlistId) as { track_id: number }[]
+  ).map((r) => r.track_id);
+}
+
+/** C:\Music\a.mp3 → file://localhost/C:/Music/a.mp3 ; /Users/x/a.mp3 → file://localhost/Users/x/a.mp3 */
+export function pathToLocation(p: string): string {
+  const posix = p.replace(/\\/g, '/');
+  const encoded = posix
+    .split('/')
+    .map((seg) => encodeURIComponent(seg).replace(/'/g, '%27'))
+    .join('/');
+  return `file://localhost/${encoded.replace(/^\//, '')}`;
+}

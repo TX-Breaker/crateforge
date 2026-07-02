@@ -1,0 +1,107 @@
+# CrateForge
+
+Library manager e utility di manutenzione per DJ. **Compatibile con Rekordbox** (non affiliato ad AlphaTheta/Pioneer DJ).
+
+Sviluppato da **TX-Breaker** in collaborazione con **Rekordbox DJ Italia Group**.
+
+> CrateForge non è un software per mixare: è il "meccanico" della tua libreria. Sistemi qui, poi suoni in Rekordbox.
+
+## Cosa fa (Fase 1)
+
+- **Backup Smart Incrementale** — snapshot di `master.db` + `options.json`, poi copia solo i file musicali nuovi/modificati (confronto mtime+size, hash opzionale con verifica d'integrità).
+- **Cacciatore di File Orfani** — diff tra disco e libreria; gli orfani vanno in una **quarantena reversibile**, mai eliminati.
+- **Report Excel** — .xlsx nativo con artista, titolo, versione (estratta dal filename quando il tag manca), durata, BPM, key (opzione Camelot), tag mancanti evidenziati in rosso, filtri attivi.
+- **Converter Anti-Lock-in** — export verso Traktor (.nml), VirtualDJ (XML) e Rekordbox XML. Serato/Engine DJ: in arrivo (la scrittura diretta è rischiosa, non la facciamo finché non è sicura).
+- **Relocator** (modalità Esperto) — ritrova i file spostati per nome file e genera un XML di aggiornamento da re-importare.
+- **Gestione encoding** — tag con caratteri corrotti/mojibake finiscono in "Da revisionare" e non inquinano gli export.
+
+### Regole di sicurezza non negoziabili
+
+- **Mai** scritture sui file originali (database o audio): tutto avviene su copie.
+- Doppia conferma esplicita (parola chiave + checkbox) su ogni azione potenzialmente distruttiva.
+- Dry-run di default sulle operazioni di massa.
+- Log completo di ogni operazione, esportabile.
+
+## Architettura
+
+- **Electron + TypeScript + React** (electron-vite). UI shadcn/ui + lucide-react.
+- **UDM**: SQLite in chiaro (`better-sqlite3`, WAL) nella cartella `userData`. Node possiede schema e migrazioni.
+- **Sidecar Python** (`python-sidecar/`): `pyrekordbox` + `sqlcipher3` per leggere il `master.db` cifrato (in sola lettura) e `fpcalc` per il fingerprint. Node passa il percorso UDM con `--udm-path` allo spawn; Python scrive solo nelle tabelle di ingestion. **Node non apre mai il database cifrato.**
+- Se il sidecar manca o la chiave non è estraibile → **modalità solo-XML**: tutte le funzioni restano usabili sull'export collection XML di Rekordbox.
+
+## Prerequisiti
+
+- Node.js ≥ 20 e npm
+- Python 3.10–3.12 (per il sidecar)
+- (Facoltativo) `fpcalc`/Chromaprint nel PATH per il fingerprint
+
+## Build
+
+```bash
+cd crateforge
+npm install                # installa deps e ricompila better-sqlite3 per Electron
+
+# Sidecar Python (facoltativo ma consigliato)
+#   macOS/Linux:
+bash python-sidecar/build_sidecar.sh
+#   Windows:
+powershell -ExecutionPolicy Bypass -File python-sidecar/build_sidecar.ps1
+
+npm test                   # suite Vitest (41 test)
+npm run build              # bundle main/preload/renderer
+npm run dist               # pacchetto installabile (dmg/zip · nsis/portable)
+```
+
+In sviluppo: `npm run dev`.
+
+### Nota sui test e l'ABI nativo
+
+`postinstall` ricompila `better-sqlite3` per l'ABI di **Electron**; per questo `npm test` esegue Vitest dentro il runtime di Electron (`ELECTRON_RUN_AS_NODE`, vedi `scripts/run-vitest.cjs`). Non serve (e non va fatto) alcun `npm rebuild` manuale.
+
+### Fixture cifrate per i test
+
+Il file `master.db` cifrato di test si genera **solo in Python** (regola v4: nessun linguaggio diverso da Python tocca il cifrato, nemmeno nei test):
+
+```bash
+python python-sidecar/make_encrypted_fixture.py   # richiede sqlcipher3-wheels
+```
+
+In alternativa puoi usare un vero master.db di test impostando `CRATEFORGE_TEST_MASTERDB`.
+
+## Firma e warning all'avvio
+
+I build locali e di CI **non sono firmati**:
+
+- **macOS (Gatekeeper)**: "app non verificata" — serve un certificato Apple Developer + notarizzazione per eliminarlo. Workaround utente: tasto destro → Apri.
+- **Windows (SmartScreen)**: "app non riconosciuta" — serve un certificato di code-signing. Workaround: Ulteriori informazioni → Esegui comunque.
+
+## Falsi positivi antivirus (Windows)
+
+Il sidecar è impacchettato con **PyInstaller**, che Windows Defender a volte segnala per errore (succede a moltissimi progetti Python legittimi: il bootstrap di PyInstaller "somiglia" a un packer). Per ridurre il problema il sidecar è costruito in modalità `--onedir` (molti meno falsi positivi di `--onefile`).
+
+Se il sidecar sparisce o l'app dice "modulo di lettura diretta non disponibile":
+
+1. Apri **Sicurezza di Windows → Protezione da virus e minacce → Cronologia protezione**.
+2. Ripristina il file segnalato (`crateforge-sidecar.exe`).
+3. Aggiungi la cartella di installazione di CrateForge alle **esclusioni**.
+
+Anche senza sidecar l'app resta pienamente usabile in modalità solo-XML.
+
+## Limiti noti (onestà tecnica)
+
+Limiti del canale XML di Rekordbox — mostrati anche nell'app prima di ogni export:
+
+- L'import XML **aggiunge/aggiorna ma non rimuove** nulla dalla collection.
+- Massimo **8 hot cue** per brano.
+- Colori memory cue, MyTag, smartlist e **loop attivi non passano**.
+- L'import finale in Rekordbox è **manuale** ("Import to Collection"): nessun automatismo totale, per scelta.
+
+Da Rekordbox 6.6.5 l'estrazione automatica della chiave del database può fallire: in quel caso l'app degrada in modalità solo-XML con istruzioni passo-passo (il fallback `download-key` di pyrekordbox è previsto come opzione Esperto, con disclaimer).
+
+## CI
+
+`.github/workflows/build.yml`: matrix macOS + Windows → artifact `.dmg`/`.zip` e `.exe` (non firmati).
+
+## Trademark
+
+Rekordbox, Pioneer, AlphaTheta, Serato, Traktor, Engine DJ e VirtualDJ sono marchi dei rispettivi proprietari. CrateForge dichiara compatibilità, nessuna affiliazione.

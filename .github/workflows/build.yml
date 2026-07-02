@@ -1,0 +1,60 @@
+name: Build CrateForge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: crateforge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crateforge/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Python sidecar (macOS)
+        if: runner.os == 'macOS'
+        run: bash python-sidecar/build_sidecar.sh
+
+      - name: Build Python sidecar (Windows)
+        if: runner.os == 'Windows'
+        run: powershell -ExecutionPolicy Bypass -File python-sidecar/build_sidecar.ps1
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package (unsigned)
+        run: npx electron-builder --publish never
+        env:
+          # Build CI non firmati: Gatekeeper/SmartScreen mostreranno warning (vedi README).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crateforge-${{ matrix.os }}
+          path: |
+            crateforge/release/*.dmg
+            crateforge/release/*.zip
+            crateforge/release/*.exe

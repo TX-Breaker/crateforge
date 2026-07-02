@@ -1,0 +1,14 @@
+node_modules/
+out/
+release/
+dist/
+*.log
+python-sidecar/.venv/
+python-sidecar/build/
+python-sidecar/dist/
+python-sidecar/*.spec
+tests/fixtures/generated/
+tests/fixtures/master.db
+*.tsbuildinfo
+.ai_state.md
+.DS_Store
