@@ -50,6 +50,28 @@ const api = {
     list: (limit?: number) => ipcRenderer.invoke('oplog:list', limit),
     exportTxt: (outPath: string) => ipcRenderer.invoke('oplog:export', outPath)
   },
+  // Fase 2 — funzioni sperimentali (modalità Esperto)
+  dedup: {
+    run: () => ipcRenderer.invoke('dedup:run')
+  },
+  relocatorFp: {
+    match: (newRoot: string) => ipcRenderer.invoke('relocator:fingerprintMatch', newRoot),
+    writeXml: (outPath: string) => ipcRenderer.invoke('relocator:writeFingerprintXml', outPath)
+  },
+  cues: {
+    analyze: (trackId: number) => ipcRenderer.invoke('cues:analyze', trackId),
+    save: (
+      trackId: number,
+      cues: { label: string; positionMs: number; color: string | null }[]
+    ) => ipcRenderer.invoke('cues:save', trackId, cues)
+  },
+  tagger: {
+    propose: (limit?: number) => ipcRenderer.invoke('tagger:propose', limit),
+    apply: (proposals: unknown[]) => ipcRenderer.invoke('tagger:apply', proposals)
+  },
+  stems: {
+    run: (trackId: number, outDir: string) => ipcRenderer.invoke('stems:run', trackId, outDir)
+  },
   dialog: {
     openFile: (filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:openFile', filters),

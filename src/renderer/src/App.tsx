@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import {
+  AudioLines,
   FileEdit,
   FileWarning,
+  Fingerprint,
+  Globe,
   HardDriveDownload,
   Home,
   Info,
@@ -9,7 +12,8 @@ import {
   Repeat,
   ScrollText,
   Settings,
-  Sheet
+  Sheet,
+  Wand2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppState } from '@/lib/appState';
@@ -21,6 +25,10 @@ import { OrphansPage } from '@/pages/OrphansPage';
 import { ReportPage } from '@/pages/ReportPage';
 import { ConverterPage } from '@/pages/ConverterPage';
 import { RelocatorPage } from '@/pages/RelocatorPage';
+import { DedupPage } from '@/pages/DedupPage';
+import { AutoCuePage } from '@/pages/AutoCuePage';
+import { TaggerPage } from '@/pages/TaggerPage';
+import { StemsPage } from '@/pages/StemsPage';
 import { ReviewPage } from '@/pages/ReviewPage';
 import { LogPage } from '@/pages/LogPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -33,6 +41,10 @@ type PageId =
   | 'report'
   | 'converter'
   | 'relocator'
+  | 'dedup'
+  | 'autocue'
+  | 'tagger'
+  | 'stems'
   | 'review'
   | 'log'
   | 'settings'
@@ -53,6 +65,10 @@ const NAV: NavItem[] = [
   { id: 'report', labelKey: 'nav.report', icon: <Sheet /> },
   { id: 'converter', labelKey: 'nav.converter', icon: <Repeat /> },
   { id: 'relocator', labelKey: 'nav.relocator', icon: <MapPin />, expertOnly: true },
+  { id: 'dedup', labelKey: 'nav.dedup', icon: <Fingerprint />, expertOnly: true },
+  { id: 'autocue', labelKey: 'nav.autocue', icon: <Wand2 />, expertOnly: true },
+  { id: 'tagger', labelKey: 'nav.tagger', icon: <Globe />, expertOnly: true },
+  { id: 'stems', labelKey: 'nav.stems', icon: <AudioLines />, expertOnly: true },
   { id: 'review', labelKey: 'nav.review', icon: <FileEdit /> },
   { id: 'log', labelKey: 'nav.log', icon: <ScrollText /> },
   { id: 'settings', labelKey: 'nav.settings', icon: <Settings /> },
@@ -109,6 +125,10 @@ export function App() {
         {active === 'report' && <ReportPage />}
         {active === 'converter' && <ConverterPage />}
         {active === 'relocator' && <RelocatorPage />}
+        {active === 'dedup' && <DedupPage />}
+        {active === 'autocue' && <AutoCuePage />}
+        {active === 'tagger' && <TaggerPage />}
+        {active === 'stems' && <StemsPage />}
         {active === 'review' && <ReviewPage />}
         {active === 'log' && <LogPage />}
         {active === 'settings' && <SettingsPage />}

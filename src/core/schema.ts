@@ -14,7 +14,7 @@ import type BetterSqlite3 from 'better-sqlite3';
  *    I due percorsi non girano mai in concorrenza: Node serializza i job.
  *  - settings / jobs / oplog → SOLO Node.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -114,6 +114,18 @@ const MIGRATIONS: Record<number, string> = {
       target TEXT,
       outcome TEXT NOT NULL,
       detail TEXT
+    );
+  `,
+  // Fase 2: risultati del matching per fingerprint (scrittore: sidecar Python,
+  // comando match-fingerprints). Node li legge per generare l'XML di relocation.
+  2: `
+    CREATE TABLE IF NOT EXISTS relocation_matches (
+      id INTEGER PRIMARY KEY,
+      track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      new_path TEXT NOT NULL,
+      method TEXT NOT NULL CHECK (method IN ('filename', 'fingerprint')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (track_id, method)
     );
   `
 };

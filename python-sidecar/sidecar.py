@@ -16,6 +16,13 @@ Comandi:
   ping                verifica presenza/avviabilità (usato dai test di fumo)
   ingest-masterdb     legge master.db e popola l'UDM
   fingerprint         calcola l'impronta Chromaprint di un singolo file (fpcalc)
+
+Comandi Fase 2 (modalità Esperto, sperimentali):
+  fingerprint-batch   acoustic_id per tutti i brani senza (dedup)
+  match-fingerprints  ritrova file spostati/rinominati per acoustic_id
+  analyze-cues        propone fino a 8 cue (richiede librerie AI, vedi
+                      requirements-ai.txt; degrada con errore pulito)
+  stems               separazione stem via Demucs (se installato)
 """
 
 from __future__ import annotations
@@ -372,31 +379,264 @@ def _ingest_playlists(rb, udm: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# fingerprint (fpcalc / Chromaprint) — base per il dedup di Fase 2
+# fingerprint (fpcalc / Chromaprint) — dedup e relocator Fase 2
 # ---------------------------------------------------------------------------
 
-def cmd_fingerprint(args: argparse.Namespace) -> None:
-    udm = open_udm(args.udm_path)
+def _run_fpcalc_raw(path: str) -> list[int] | None:
+    """Fingerprint Chromaprint grezzo (lista di interi a 32 bit) o None."""
     try:
         out = subprocess.run(
-            ["fpcalc", "-json", args.file],
+            ["fpcalc", "-raw", "-json", path],
             capture_output=True,
             text=True,
             timeout=120,
         )
     except FileNotFoundError:
-        fail("fpcalc (Chromaprint) non trovato nel PATH.")
+        fail("fpcalc (Chromaprint) non trovato nel PATH: installalo per usare il fingerprint.")
     except subprocess.TimeoutExpired:
-        fail("fpcalc: timeout sul file.")
+        return None
     if out.returncode != 0:
-        fail(f"fpcalc exit {out.returncode}: {out.stderr.strip()[:500]}")
-    data = json.loads(out.stdout)
-    fp = data.get("fingerprint")
-    if fp and args.track_id:
-        udm.execute("UPDATE tracks SET acoustic_id=? WHERE id=?", (fp[:64], int(args.track_id)))
+        return None
+    try:
+        fp = json.loads(out.stdout).get("fingerprint")
+    except json.JSONDecodeError:
+        return None
+    return fp if isinstance(fp, list) and fp else None
+
+
+def acoustic_id_from_raw(fp: list[int], segments: int = 4) -> str:
+    """ID acustico robusto: simhash a 32 bit per segmento temporale.
+
+    Il fingerprint grezzo cambia leggermente tra encoding diversi dello stesso
+    brano; la maggioranza bit-per-bit (simhash) su ogni segmento assorbe le
+    piccole differenze, così due encode dello stesso audio collassano quasi
+    sempre sullo stesso ID. Sperimentale (§6 Fase 2): la UI lo dichiara.
+    """
+    n = len(fp)
+    seg_len = max(1, n // segments)
+    parts: list[str] = []
+    for s in range(segments):
+        chunk = fp[s * seg_len : (s + 1) * seg_len] or fp[-seg_len:]
+        votes = [0] * 32
+        for v in chunk:
+            v &= 0xFFFFFFFF
+            for b in range(32):
+                votes[b] += 1 if (v >> b) & 1 else -1
+        h = 0
+        for b in range(32):
+            if votes[b] > 0:
+                h |= 1 << b
+        parts.append(f"{h:08x}")
+    return "".join(parts)
+
+
+def cmd_fingerprint(args: argparse.Namespace) -> None:
+    udm = open_udm(args.udm_path)
+    fp = _run_fpcalc_raw(args.file)
+    if fp is None:
+        udm.close()
+        fail(f"fpcalc non è riuscito a leggere il file: {args.file}")
+    aid = acoustic_id_from_raw(fp)
+    if args.track_id:
+        udm.execute("UPDATE tracks SET acoustic_id=? WHERE id=?", (aid, int(args.track_id)))
         udm.commit()
     udm.close()
-    emit({"type": "done", "data": {"duration": data.get("duration"), "hasFingerprint": bool(fp)}})
+    emit({"type": "done", "data": {"acousticId": aid}})
+
+
+def cmd_fingerprint_batch(args: argparse.Namespace) -> None:
+    """acoustic_id per tutti i brani con file esistente e acoustic_id NULL."""
+    udm = open_udm(args.udm_path)
+    rows = udm.execute(
+        "SELECT id, path FROM tracks WHERE path IS NOT NULL AND acoustic_id IS NULL"
+    ).fetchall()
+    todo = [(tid, p) for tid, p in rows if p and os.path.exists(p)]
+    progress = ThrottledProgress("fingerprint")
+    done_count, failed = 0, 0
+    for i, (tid, path) in enumerate(todo):
+        fp = _run_fpcalc_raw(path)
+        if fp is None:
+            failed += 1
+        else:
+            udm.execute(
+                "UPDATE tracks SET acoustic_id=? WHERE id=?",
+                (acoustic_id_from_raw(fp), tid),
+            )
+            done_count += 1
+        if (i + 1) % 25 == 0:
+            udm.commit()
+        progress.update(i + 1, len(todo))
+    udm.commit()
+    progress.finish(len(todo), len(todo))
+    udm.close()
+    emit({
+        "type": "done",
+        "data": {"fingerprinted": done_count, "failed": failed, "skippedMissing": len(rows) - len(todo)},
+    })
+
+
+_AUDIO_EXT = (".mp3", ".m4a", ".aac", ".flac", ".wav", ".aiff", ".aif", ".ogg", ".opus", ".wma")
+
+
+def cmd_match_fingerprints(args: argparse.Namespace) -> None:
+    """Relocator per fingerprint (§6 Fase 2.3): ritrova i brani con path rotto
+    fingerprintando i file nella nuova cartella e confrontando gli acoustic_id
+    già salvati. Scrive i match in relocation_matches; Node genera l'XML.
+    """
+    udm = open_udm(args.udm_path)
+    broken = [
+        (tid, aid)
+        for tid, path, aid in udm.execute(
+            "SELECT id, path, acoustic_id FROM tracks "
+            "WHERE acoustic_id IS NOT NULL AND path IS NOT NULL"
+        ).fetchall()
+        if not os.path.exists(path)
+    ]
+    if not broken:
+        udm.close()
+        emit({"type": "done", "data": {"broken": 0, "matched": 0, "scanned": 0}})
+        return
+    by_aid: dict[str, list[int]] = {}
+    for tid, aid in broken:
+        by_aid.setdefault(aid, []).append(tid)
+
+    candidates = [
+        os.path.join(root, f)
+        for root, _dirs, files in os.walk(args.new_root)
+        for f in files
+        if f.lower().endswith(_AUDIO_EXT)
+    ]
+    progress = ThrottledProgress("relocate-fingerprint")
+    matched = 0
+    udm.execute("DELETE FROM relocation_matches WHERE method='fingerprint'")
+    for i, cand in enumerate(candidates):
+        fp = _run_fpcalc_raw(cand)
+        if fp is not None:
+            aid = acoustic_id_from_raw(fp)
+            for tid in by_aid.get(aid, []):
+                udm.execute(
+                    "INSERT OR REPLACE INTO relocation_matches (track_id, new_path, method) "
+                    "VALUES (?, ?, 'fingerprint')",
+                    (tid, cand),
+                )
+                matched += 1
+        if (i + 1) % 10 == 0:
+            udm.commit()
+        progress.update(i + 1, len(candidates))
+    udm.commit()
+    progress.finish(len(candidates), len(candidates))
+    udm.close()
+    emit({
+        "type": "done",
+        "data": {"broken": len(broken), "matched": matched, "scanned": len(candidates)},
+    })
+
+
+# ---------------------------------------------------------------------------
+# analyze-cues (Fase 2.1, sperimentale) — richiede librerie AI opzionali
+# ---------------------------------------------------------------------------
+
+def cmd_analyze_cues(args: argparse.Namespace) -> None:
+    """Propone fino a 8 cue. Ordine di preferenza dei backend:
+    aubio (onset/beat) → fallback errore pulito se nessuna libreria AI.
+    Output: pochi KB via evento done (mai bulk data).
+    """
+    try:
+        import aubio  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        fail(
+            "Librerie AI non installate in questo sidecar. Installa il livello AI: "
+            "pip install -r requirements-ai.txt (vedi README). "
+            "Le altre funzioni restano disponibili."
+        )
+        return
+
+    path = args.file
+    if not os.path.exists(path):
+        fail(f"File non trovato: {path}")
+
+    hop = 512
+    src = aubio.source(path, 0, hop)
+    sr = src.samplerate
+    onset = aubio.onset("energy", 1024, hop, sr)
+    tempo = aubio.tempo("default", 1024, hop, sr)
+
+    onsets_s: list[float] = []
+    energies: list[float] = []
+    total_frames = 0
+    while True:
+        samples, read = src()
+        if onset(samples):
+            onsets_s.append(onset.get_last_s())
+        tempo(samples)
+        energies.append(float(np.sqrt(np.mean(samples**2))))
+        total_frames += read
+        if read < hop:
+            break
+    duration = total_frames / sr
+    bpm = float(tempo.get_bpm()) or None
+
+    # Profilo d'energia a finestre da ~1s → intro/drop/breakdown/outro euristici.
+    win = max(1, int(sr / hop))
+    profile = [
+        float(sum(energies[i : i + win]) / win) for i in range(0, len(energies), win)
+    ]
+    peak = max(profile) if profile else 0.0
+    cues: list[dict] = []
+
+    def add(label: str, t: float, color: str) -> None:
+        if 0 <= t < duration and len(cues) < 8:
+            cues.append({"label": label, "positionMs": round(t * 1000), "color": color})
+
+    add("Intro", onsets_s[0] if onsets_s else 0.0, "#28e214")
+    # Drop: primo salto sostenuto sopra l'80% del picco
+    for i, e in enumerate(profile):
+        if e >= 0.8 * peak and i > 4:
+            add("Drop", float(i), "#e21414")
+            break
+    # Breakdown: primo crollo sotto il 30% del picco dopo il drop
+    drop_i = next((i for i, e in enumerate(profile) if e >= 0.8 * peak and i > 4), None)
+    if drop_i is not None:
+        for i in range(drop_i + 4, len(profile)):
+            if profile[i] <= 0.3 * peak:
+                add("Breakdown", float(i), "#1478e2")
+                break
+    add("Outro", max(0.0, duration - 32.0), "#e2a014")
+
+    emit({
+        "type": "done",
+        "data": {
+            "durationS": round(duration, 2),
+            "bpm": round(bpm, 2) if bpm else None,
+            "cues": cues,
+            "backend": "aubio-energy",
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# stems (Fase 2.5, opzionale) — Demucs on-demand
+# ---------------------------------------------------------------------------
+
+def cmd_stems(args: argparse.Namespace) -> None:
+    try:
+        import demucs  # type: ignore  # noqa: F401
+    except ImportError:
+        fail(
+            "Demucs non installato in questo sidecar (operazione opzionale e "
+            "pesante). Installa il livello AI: pip install -r requirements-ai.txt."
+        )
+        return
+    emit({"type": "log", "message": "Separazione stem avviata (operazione lunga)…"})
+    out = subprocess.run(
+        [sys.executable, "-m", "demucs", "--out", args.out_dir, args.file],
+        capture_output=True,
+        text=True,
+    )
+    if out.returncode != 0:
+        fail(f"Demucs exit {out.returncode}: {out.stderr.strip()[-500:]}")
+    emit({"type": "done", "data": {"outDir": args.out_dir}})
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +661,23 @@ def main() -> None:
     p_fp.add_argument("--file", required=True)
     p_fp.add_argument("--track-id", required=False)
 
+    p_fpb = sub.add_parser("fingerprint-batch")
+    p_fpb.add_argument("--udm-path", required=True)
+
+    p_mfp = sub.add_parser("match-fingerprints")
+    p_mfp.add_argument("--udm-path", required=True)
+    p_mfp.add_argument("--new-root", required=True)
+
+    p_cues = sub.add_parser("analyze-cues")
+    p_cues.add_argument("--udm-path", required=True)
+    p_cues.add_argument("--file", required=True)
+    p_cues.add_argument("--track-id", required=False)
+
+    p_stems = sub.add_parser("stems")
+    p_stems.add_argument("--udm-path", required=True)
+    p_stems.add_argument("--file", required=True)
+    p_stems.add_argument("--out-dir", required=True)
+
     args = parser.parse_args()
 
     if args.command == "ping":
@@ -429,6 +686,14 @@ def main() -> None:
         cmd_ingest_masterdb(args)
     elif args.command == "fingerprint":
         cmd_fingerprint(args)
+    elif args.command == "fingerprint-batch":
+        cmd_fingerprint_batch(args)
+    elif args.command == "match-fingerprints":
+        cmd_match_fingerprints(args)
+    elif args.command == "analyze-cues":
+        cmd_analyze_cues(args)
+    elif args.command == "stems":
+        cmd_stems(args)
 
 
 if __name__ == "__main__":

@@ -38,10 +38,11 @@ export async function generateExcelReport(
     { header: 'Anno', key: 'year', width: 8 },
     { header: 'Genere', key: 'genre', width: 18 },
     { header: 'Path', key: 'path', width: 60 },
-    { header: 'Manca tag?', key: 'missing', width: 12 }
+    { header: 'Manca tag?', key: 'missing', width: 12 },
+    { header: 'Acoustic ID', key: 'acoustic', width: 34 }
   ];
   sheet.getRow(1).font = { bold: true };
-  sheet.autoFilter = 'A1:J1';
+  sheet.autoFilter = 'A1:K1';
 
   const where = opts.playlistId
     ? `WHERE t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = @pl)`
@@ -76,7 +77,8 @@ export async function generateExcelReport(
         year: t.year ?? '',
         genre: t.genre ?? '',
         path: t.path ?? '',
-        missing: missingTag ? 'SÌ' : ''
+        missing: missingTag ? 'SÌ' : '',
+        acoustic: t.acoustic_id ?? ''
       });
       if (missingTag) {
         // Formattazione condizionale semplice: cella rossa dove manca il tag.

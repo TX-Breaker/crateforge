@@ -17,6 +17,24 @@ describe('schema/migrazioni', () => {
     migrate(db); // seconda esecuzione: nessun errore
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
+
+  it('v2: tabella relocation_matches presente e vincolata', () => {
+    const db = memDb();
+    db.prepare(
+      `INSERT INTO tracks (source, source_id, title) VALUES ('xml', '1', 'T')`
+    ).run();
+    const trackId = (db.prepare(`SELECT id FROM tracks`).get() as { id: number }).id;
+    db.prepare(
+      `INSERT INTO relocation_matches (track_id, new_path, method) VALUES (?, ?, 'fingerprint')`
+    ).run(trackId, 'C:\\new\\a.mp3');
+    // UNIQUE (track_id, method): il replace non duplica
+    db.prepare(
+      `INSERT OR REPLACE INTO relocation_matches (track_id, new_path, method) VALUES (?, ?, 'fingerprint')`
+    ).run(trackId, 'C:\\new\\b.mp3');
+    const rows = db.prepare(`SELECT * FROM relocation_matches`).all() as { new_path: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].new_path).toBe('C:\\new\\b.mp3');
+  });
 });
 
 describe('settings + oplog', () => {

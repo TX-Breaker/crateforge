@@ -14,8 +14,10 @@ import { writeVirtualDjXml } from '@adapters/virtualdj/vdjWriter';
 import { REKORDBOX_XML_LIMITS } from '@adapters/common';
 import { SERATO_STATUS } from '@adapters/serato';
 import { ENGINE_STATUS } from '@adapters/engine';
+import { applyProposals, proposeTags, TagProposal } from '@services/tagger/autoTagger';
+import type { TrackRow } from '@core/udm';
 import { ThrottledProgress } from './progress';
-import { checkSidecar, runSidecar } from './sidecar';
+import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
 
 /**
  * Registrazione handler IPC. Regole:
@@ -310,6 +312,185 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     });
     logOperation(db, 'oplog.export', outPath, 'ok');
     return { outPath };
+  });
+
+  // =====================================================================
+  // FASE 2 — funzioni sperimentali (modalità Esperto)
+  // =====================================================================
+
+  /** Esegue un comando sidecar con progressi throttlati; ritorna l'evento done. */
+  const runSidecarJob = (
+    command: string,
+    phase: string,
+    args: string[]
+  ): Promise<{ ok: boolean; data?: Record<string, unknown>; message?: string }> => {
+    const progress = new ThrottledProgress(win().webContents);
+    const jobId = randomUUID();
+    let doneData: Record<string, unknown> | undefined;
+    let lastError: string | null = null;
+    const handle = runSidecar({
+      command,
+      udmPath,
+      args,
+      onEvent: (ev: SidecarEvent) => {
+        if (ev.type === 'progress') {
+          progress.update({ jobId, phase: ev.phase ?? phase, done: ev.done ?? 0, total: ev.total ?? 0 });
+        } else if (ev.type === 'done') {
+          doneData = ev.data;
+        } else if (ev.type === 'error') {
+          lastError = ev.message ?? 'Errore sconosciuto del sidecar';
+        }
+      }
+    });
+    currentCancel = handle.cancel;
+    return handle.finished.then(({ code }) => {
+      progress.finish({ jobId, phase, done: 1, total: 1 });
+      currentCancel = null;
+      if (code !== 0 || !doneData) {
+        return { ok: false as const, message: lastError ?? `Il modulo è terminato con codice ${code}.` };
+      }
+      return { ok: true as const, data: doneData };
+    });
+  };
+
+  // ---- dedup per fingerprint (Fase 2.2) ----
+  ipcMain.handle('dedup:run', async () => {
+    const r = await runSidecarJob('fingerprint-batch', 'fingerprint', []);
+    if (!r.ok) {
+      logOperation(db, 'dedup.fingerprint', null, 'error', r.message);
+      return { ok: false, message: r.message };
+    }
+    // Gruppi con lo stesso acoustic_id (bounded: max 500 gruppi al renderer).
+    const groups = db
+      .prepare(
+        `SELECT acoustic_id, COUNT(*) AS c FROM tracks
+         WHERE acoustic_id IS NOT NULL
+         GROUP BY acoustic_id HAVING c > 1
+         ORDER BY c DESC LIMIT 500`
+      )
+      .all() as { acoustic_id: string; c: number }[];
+    const trackStmt = db.prepare(
+      `SELECT id, title, artist, path, filesize, duration_s FROM tracks WHERE acoustic_id = ?`
+    );
+    const result = groups.map((g) => ({
+      acousticId: g.acoustic_id,
+      tracks: trackStmt.all(g.acoustic_id) as Pick<
+        TrackRow,
+        'id' | 'title' | 'artist' | 'path' | 'filesize' | 'duration_s'
+      >[]
+    }));
+    logOperation(db, 'dedup.fingerprint', null, 'ok', `${result.length} gruppi di duplicati`);
+    return { ok: true, stats: r.data, groups: result };
+  });
+
+  // ---- relocator per fingerprint (Fase 2.3) ----
+  ipcMain.handle('relocator:fingerprintMatch', async (_e, newRoot: string) => {
+    const r = await runSidecarJob('match-fingerprints', 'relocate-fingerprint', [
+      '--new-root',
+      newRoot
+    ]);
+    if (!r.ok) {
+      logOperation(db, 'relocator.fingerprint', newRoot, 'error', r.message);
+      return { ok: false, message: r.message };
+    }
+    logOperation(db, 'relocator.fingerprint', newRoot, 'dry-run', JSON.stringify(r.data));
+    return { ok: true, ...r.data };
+  });
+
+  ipcMain.handle('relocator:writeFingerprintXml', (_e, outPath: string) => {
+    const rows = db
+      .prepare(
+        `SELECT rm.new_path, t.* FROM relocation_matches rm
+         JOIN tracks t ON t.id = rm.track_id
+         WHERE rm.method = 'fingerprint'`
+      )
+      .all() as ({ new_path: string } & TrackRow)[];
+    const matches = rows.map((row) => {
+      const { new_path, ...track } = row;
+      return {
+        track: track as TrackRow,
+        oldPath: track.path ?? '',
+        newPath: new_path,
+        ambiguous: []
+      };
+    });
+    const r = writeRelocationXml(matches, outPath);
+    logOperation(db, 'relocator.fingerprint.xml', outPath, 'ok', JSON.stringify(r));
+    return r;
+  });
+
+  // ---- auto-cue assistito (Fase 2.1) ----
+  ipcMain.handle('cues:analyze', async (_e, trackId: number) => {
+    const t = db.prepare(`SELECT id, path FROM tracks WHERE id = ?`).get(trackId) as
+      | { id: number; path: string | null }
+      | undefined;
+    if (!t?.path) return { ok: false, message: 'Brano senza percorso file.' };
+    const r = await runSidecarJob('analyze-cues', 'analyze-cues', [
+      '--file',
+      t.path,
+      '--track-id',
+      String(trackId)
+    ]);
+    if (!r.ok) {
+      logOperation(db, 'cues.analyze', t.path, 'error', r.message);
+      return { ok: false, message: r.message };
+    }
+    logOperation(db, 'cues.analyze', t.path, 'ok');
+    return { ok: true, ...r.data };
+  });
+
+  // L'utente ha rivisto/spostato i cue proposti e ha cliccato salva:
+  // scriviamo nell'UDM (mai nel master.db; verso Rekordbox si passa dall'XML).
+  ipcMain.handle(
+    'cues:save',
+    (_e, trackId: number, cues: { label: string; positionMs: number; color: string | null }[]) => {
+      const capped = cues.slice(0, 8); // limite hot cue import XML (§4)
+      const tx = db.transaction(() => {
+        db.prepare(`DELETE FROM cues WHERE track_id = ? AND cue_type = 'hot'`).run(trackId);
+        const ins = db.prepare(
+          `INSERT INTO cues (track_id, cue_type, cue_index, position_ms, color, label)
+           VALUES (?, 'hot', ?, ?, ?, ?)`
+        );
+        capped.forEach((c, i) => ins.run(trackId, i, c.positionMs, c.color, c.label));
+      });
+      tx();
+      logOperation(db, 'cues.save', String(trackId), 'ok', `${capped.length} hot cue`);
+      return { saved: capped.length };
+    }
+  );
+
+  // ---- auto-tagger (Fase 2.4): solo query testuali, mai upload audio ----
+  ipcMain.handle('tagger:propose', async (_e, limit?: number) => {
+    const progress = new ThrottledProgress(win().webContents);
+    const jobId = randomUUID();
+    try {
+      const r = await proposeTags(db, {
+        limit,
+        onProgress: (done, total) => progress.update({ jobId, phase: 'tagger', done, total })
+      });
+      progress.finish({ jobId, phase: 'tagger', done: 1, total: 1 });
+      logOperation(db, 'tagger.propose', null, 'dry-run', `${r.proposals.length} proposte su ${r.queried} brani`);
+      return { ok: true, ...r };
+    } catch (err) {
+      progress.finish({ jobId, phase: 'tagger', done: 1, total: 1 });
+      logOperation(db, 'tagger.propose', null, 'error', String(err));
+      return { ok: false, message: String(err) };
+    }
+  });
+
+  ipcMain.handle('tagger:apply', (_e, proposals: TagProposal[]) =>
+    applyProposals(db, proposals)
+  );
+
+  // ---- stems (Fase 2.5, opzionale e pesante) ----
+  ipcMain.handle('stems:run', async (_e, trackId: number, outDir: string) => {
+    const t = db.prepare(`SELECT path FROM tracks WHERE id = ?`).get(trackId) as
+      | { path: string | null }
+      | undefined;
+    if (!t?.path) return { ok: false, message: 'Brano senza percorso file.' };
+    const r = await runSidecarJob('stems', 'stems', ['--file', t.path, '--out-dir', outDir]);
+    logOperation(db, 'stems.run', t.path, r.ok ? 'ok' : 'error', r.ok ? outDir : r.message);
+    return r;
   });
 
   // ---- dialoghi file ----

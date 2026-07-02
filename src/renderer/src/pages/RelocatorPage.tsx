@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSearch, MapPin } from 'lucide-react';
+import { FileSearch, Fingerprint, MapPin } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
@@ -162,6 +162,14 @@ export function RelocatorPage() {
         </Card>
       )}
 
+      <FingerprintRelocator
+        newRoot={newRoot}
+        setBusy={setBusy}
+        setError={setError}
+        setOutcome={setOutcome}
+        busy={busy}
+      />
+
       <JobProgressBar active={busy} />
       {outcome && (
         <Alert>
@@ -174,5 +182,95 @@ export function RelocatorPage() {
         </Alert>
       )}
     </div>
+  );
+}
+
+/**
+ * Relocator per fingerprint (§6 Fase 2.3): ritrova i file anche se RINOMINATI,
+ * confrontando l'impronta acustica. Richiede di aver già calcolato le impronte
+ * (pagina "Duplicati (impronta)") quando i file erano ancora al loro posto.
+ */
+function FingerprintRelocator({
+  newRoot,
+  busy,
+  setBusy,
+  setError,
+  setOutcome
+}: {
+  newRoot: string;
+  busy: boolean;
+  setBusy: (v: boolean) => void;
+  setError: (v: string | null) => void;
+  setOutcome: (v: string | null) => void;
+}) {
+  const [fpSummary, setFpSummary] = useState<{ broken: number; matched: number; scanned: number } | null>(null);
+
+  const doMatch = async () => {
+    setBusy(true);
+    setError(null);
+    setFpSummary(null);
+    try {
+      const r = await window.crateforge.relocatorFp.match(newRoot);
+      if (!r.ok) setError(r.message);
+      else setFpSummary(r as { broken: number; matched: number; scanned: number });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doWrite = async () => {
+    const outPath = await window.crateforge.dialog.saveFile('crateforge-relocation-fp.xml', [
+      { name: 'Rekordbox XML', extensions: ['xml'] }
+    ]);
+    if (!outPath) return;
+    setBusy(true);
+    try {
+      const r = await window.crateforge.relocatorFp.writeXml(outPath);
+      setOutcome(
+        `XML scritto (${r.written} brani ritrovati per impronta) in ${outPath}. ` +
+          'Importalo a mano in Rekordbox. Il master.db non è stato toccato.'
+      );
+      setFpSummary(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Fingerprint className="h-4 w-4" /> Extra · Matching per impronta acustica
+          (sperimentale)
+        </CardTitle>
+        <CardDescription>
+          Ritrova i file anche se sono stati RINOMINATI. Funziona solo per i brani di cui hai già
+          calcolato l'impronta (pagina "Duplicati") prima di spostarli; fingerprinta tutti i file
+          della nuova cartella, quindi può richiedere parecchi minuti.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button onClick={doMatch} disabled={!newRoot || busy} variant="secondary">
+          Cerca per impronta nella nuova cartella
+        </Button>
+        {fpSummary && (
+          <>
+            <Alert>
+              <AlertDescription>
+                File scansionati: {fpSummary.scanned} — brani rotti con impronta:{' '}
+                {fpSummary.broken} — <b>ritrovati: {fpSummary.matched}</b>.
+              </AlertDescription>
+            </Alert>
+            {fpSummary.matched > 0 && (
+              <Button onClick={doWrite} disabled={busy}>
+                <MapPin /> Genera XML di aggiornamento…
+              </Button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

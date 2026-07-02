@@ -15,6 +15,41 @@ Sviluppato da **TX-Breaker** in collaborazione con **Rekordbox DJ Italia Group**
 - **Relocator** (modalità Esperto) — ritrova i file spostati per nome file e genera un XML di aggiornamento da re-importare.
 - **Gestione encoding** — tag con caratteri corrotti/mojibake finiscono in "Da revisionare" e non inquinano gli export.
 
+## Cosa fa (Fase 2 — modalità Esperto, sperimentale)
+
+Funzioni visibili solo attivando la modalità **Esperto** nelle impostazioni; ognuna
+dichiara i propri limiti in-app prima di eseguire.
+
+- **Duplicati per impronta acustica** — `fpcalc`/Chromaprint calcola un Acoustic ID
+  (simhash) per ogni brano: trova i doppioni veri anche con nomi file diversi.
+  I duplicati selezionati vanno in quarantena reversibile (doppia conferma).
+  L'Acoustic ID compare anche nel Report Excel.
+- **Relocator per impronta** — ritrova i file anche se **rinominati**, confrontando
+  le impronte già calcolate. Genera il solito XML di aggiornamento.
+- **Auto-Cue assistito** — propone fino a 8 cue (intro/drop/breakdown/outro) con
+  euristiche su onset ed energia (aubio). Tu li rivedi, li correggi e decidi se
+  salvarli: nessun algoritmo sostituisce il tuo orecchio.
+- **Auto-Tagger** — completa anno/genere mancanti interrogando MusicBrainz con
+  **sole query testuali** artista/titolo (mai upload audio), rate-limit 1 req/s,
+  solo match con confidenza alta; proposte da approvare una a una.
+- **Stems (Demucs)** — separazione voce/batteria/basso in file nuovi, on-demand e
+  annullabile. Operazione lunga e pesante, dichiarata come tale.
+
+### Livello AI del sidecar (opzionale)
+
+Le funzioni Auto-Cue e Stems richiedono librerie extra, volutamente separate dal
+sidecar base per non comprometterne l'affidabilità:
+
+```bash
+# nello stesso venv del sidecar
+pip install --prefer-binary -r python-sidecar/requirements-ai.txt
+```
+
+Senza queste librerie l'app funziona comunque: i comandi AI falliscono con un
+messaggio chiaro, tutto il resto resta operativo. Nota compatibilità: `essentia`
+e `madmom` non hanno wheel per Windows (vedi commenti in `requirements-ai.txt`);
+il backend attuale usa `aubio`+`numpy`.
+
 ### Regole di sicurezza non negoziabili
 
 - **Mai** scritture sui file originali (database o audio): tutto avviene su copie.
