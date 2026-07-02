@@ -42,6 +42,8 @@ export class RateLimiter {
   }
 }
 
+export type TagProvider = 'musicbrainz' | 'discogs';
+
 interface MbRecording {
   score?: number;
   title?: string;
@@ -83,10 +85,58 @@ export async function queryMusicBrainz(
   return null;
 }
 
+/**
+ * Provider Discogs (opzionale, richiede token personale gratuito —
+ * discogs.com/settings/developers). Rate limit: 60 req/min autenticati, lo
+ * stesso limiter da ~1 req/s è abbondantemente dentro il limite.
+ * Anche qui: SOLO query testuali, mai audio.
+ */
+export async function queryDiscogs(
+  artist: string,
+  title: string,
+  token: string,
+  fetchFn: FetchFn,
+  limiter: RateLimiter,
+  retries = 3
+): Promise<{ year?: string; genre?: string } | null> {
+  const url =
+    `https://api.discogs.com/database/search?artist=${encodeURIComponent(artist)}` +
+    `&track=${encodeURIComponent(title)}&type=release&per_page=3&token=${encodeURIComponent(token)}`;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    await limiter.wait();
+    let res;
+    try {
+      res = await fetchFn(url, { headers: { 'User-Agent': USER_AGENT } });
+    } catch {
+      if (attempt === retries) return null;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      continue;
+    }
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
+      continue;
+    }
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      results?: { year?: string; genre?: string[]; style?: string[] }[];
+    };
+    const best = data.results?.[0];
+    if (!best) return null;
+    return {
+      year: best.year,
+      // "style" su Discogs è più specifico del "genre" macro (es. Tech House vs Electronic)
+      genre: best.style?.[0] ?? best.genre?.[0]
+    };
+  }
+  return null;
+}
+
 export interface ProposeOptions {
   limit?: number; // max brani da interrogare per giro (rate limit!)
   fetchFn?: FetchFn;
   onProgress?: (done: number, total: number) => void;
+  provider?: TagProvider; // default musicbrainz
+  discogsToken?: string; // richiesto se provider=discogs
 }
 
 /** Propone year/genre per i brani che ne sono privi ma hanno artista+titolo. */
@@ -107,31 +157,43 @@ export async function proposeTags(
     .all(limit) as { id: number; artist: string; title: string; year: number | null; genre: string | null }[];
 
   const limiter = new RateLimiter(1100);
+  const provider = opts.provider ?? 'musicbrainz';
+  if (provider === 'discogs' && !opts.discogsToken) {
+    throw new Error('Provider Discogs selezionato ma manca il token (Impostazioni → Esperto).');
+  }
   const proposals: TagProposal[] = [];
   let queried = 0;
   let skipped = 0;
   for (let i = 0; i < rows.length; i++) {
     const t = rows[i];
-    const rec = await queryMusicBrainz(t.artist, t.title, fetchFn, limiter);
+    let year: string | undefined;
+    let genre: string | undefined;
+    let src: string;
     queried++;
-    if (!rec) {
-      skipped++;
+    if (provider === 'discogs') {
+      const rec = await queryDiscogs(t.artist, t.title, opts.discogsToken!, fetchFn, limiter);
+      src = 'Discogs';
+      year = rec?.year;
+      genre = rec?.genre;
+      if (!rec) skipped++;
     } else {
-      const src = `MusicBrainz (score ${rec.score ?? '?'})`;
-      const year = rec['first-release-date']?.slice(0, 4);
-      if (t.year === null && year && /^\d{4}$/.test(year)) {
-        proposals.push({
-          trackId: t.id, artist: t.artist, title: t.title,
-          field: 'year', current: null, proposed: year, source: src
-        });
-      }
-      const topTag = (rec.tags ?? []).sort((a, b) => b.count - a.count)[0]?.name;
-      if (t.genre === null && topTag) {
-        proposals.push({
-          trackId: t.id, artist: t.artist, title: t.title,
-          field: 'genre', current: null, proposed: topTag, source: src
-        });
-      }
+      const rec = await queryMusicBrainz(t.artist, t.title, fetchFn, limiter);
+      src = `MusicBrainz (score ${rec?.score ?? '?'})`;
+      year = rec?.['first-release-date']?.slice(0, 4);
+      genre = (rec?.tags ?? []).sort((a, b) => b.count - a.count)[0]?.name;
+      if (!rec) skipped++;
+    }
+    if (t.year === null && year && /^\d{4}$/.test(year)) {
+      proposals.push({
+        trackId: t.id, artist: t.artist, title: t.title,
+        field: 'year', current: null, proposed: year, source: src
+      });
+    }
+    if (t.genre === null && genre) {
+      proposals.push({
+        trackId: t.id, artist: t.artist, title: t.title,
+        field: 'genre', current: null, proposed: genre, source: src
+      });
     }
     opts.onProgress?.(i + 1, rows.length);
   }

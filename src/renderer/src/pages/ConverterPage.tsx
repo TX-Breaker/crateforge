@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription, Badge, Checkbox } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 
 type Format = 'rekordbox' | 'traktor' | 'virtualdj';
 
@@ -146,7 +147,10 @@ export function ConverterPage() {
       <JobProgressBar active={busy} />
       {outcome && (
         <Alert>
-          <AlertDescription>{outcome}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{outcome}</p>
+            <SaveTargetNotice target="xml" />
+          </AlertDescription>
         </Alert>
       )}
       {error && (

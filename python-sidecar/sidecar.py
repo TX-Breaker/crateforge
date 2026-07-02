@@ -23,6 +23,12 @@ Comandi Fase 2 (modalità Esperto, sperimentali):
   analyze-cues        propone fino a 8 cue (richiede librerie AI, vedi
                       requirements-ai.txt; degrada con errore pulito)
   stems               separazione stem via Demucs (se installato)
+
+Comandi fase intermedia (opt-in "scritture dirette", massima cautela):
+  write-tags          scrive tag ID3/Vorbis SUI FILE ORIGINALI via mutagen,
+                      con backup verificato per hash e rollback automatico
+  download-key        recupera la chiave di decrittazione di Rekordbox
+                      (fallback pyrekordbox §4.3, modalità Esperto)
 """
 
 from __future__ import annotations
@@ -382,17 +388,40 @@ def _ingest_playlists(rb, udm: sqlite3.Connection) -> None:
 # fingerprint (fpcalc / Chromaprint) — dedup e relocator Fase 2
 # ---------------------------------------------------------------------------
 
+def _fpcalc_binary() -> str:
+    """Percorso di fpcalc. Ordine: env CRATEFORGE_FPCALC → binario incluso nel
+    pacchetto (accanto all'eseguibile del sidecar, ce lo mette lo script di
+    build) → PATH di sistema. Così l'utente non deve installare nulla a mano.
+    """
+    env = os.environ.get("CRATEFORGE_FPCALC")
+    if env and os.path.exists(env):
+        return env
+    exe_name = "fpcalc.exe" if sys.platform == "win32" else "fpcalc"
+    base = (
+        os.path.dirname(sys.executable)
+        if getattr(sys, "frozen", False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    for candidate in (os.path.join(base, exe_name), os.path.join(base, "bin", exe_name)):
+        if os.path.exists(candidate):
+            return candidate
+    return "fpcalc"  # fallback: PATH
+
+
 def _run_fpcalc_raw(path: str) -> list[int] | None:
     """Fingerprint Chromaprint grezzo (lista di interi a 32 bit) o None."""
     try:
         out = subprocess.run(
-            ["fpcalc", "-raw", "-json", path],
+            [_fpcalc_binary(), "-raw", "-json", path],
             capture_output=True,
             text=True,
             timeout=120,
         )
     except FileNotFoundError:
-        fail("fpcalc (Chromaprint) non trovato nel PATH: installalo per usare il fingerprint.")
+        fail(
+            "fpcalc (Chromaprint) non trovato: né incluso nel pacchetto né nel PATH. "
+            "Reinstalla CrateForge o esegui di nuovo lo script di build del sidecar."
+        )
     except subprocess.TimeoutExpired:
         return None
     if out.returncode != 0:
@@ -616,6 +645,125 @@ def cmd_analyze_cues(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# write-tags — scrittura ID3 sugli ORIGINALI (opt-in, backup+hash+rollback §3.4)
+# ---------------------------------------------------------------------------
+
+def _sha256(path: str) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def cmd_write_tags(args: argparse.Namespace) -> None:
+    """Scrive tag sui file originali. Per OGNI file:
+    1. hash dell'originale; 2. copia di backup + verifica hash; 3. scrittura
+    mutagen; 4. riapertura di verifica; 5. su qualsiasi errore: ripristino del
+    backup + verifica hash del ripristino. Il backup resta comunque su disco.
+    """
+    try:
+        import mutagen
+    except ImportError:
+        fail("mutagen non disponibile nel sidecar: rebuild richiesto.")
+        return
+    import shutil
+
+    try:
+        jobs = json.loads(args.tags_json)
+        assert isinstance(jobs, list)
+    except (json.JSONDecodeError, AssertionError):
+        fail("--tags-json non valido: atteso un array [{path, tags{}}].")
+        return
+    os.makedirs(args.backup_dir, exist_ok=True)
+
+    # Mappa campi UDM → chiavi EasyID3/VorbisComment di mutagen (easy=True).
+    field_map = {"title": "title", "artist": "artist", "album": "album",
+                 "genre": "genre", "year": "date", "bpm": "bpm"}
+
+    progress = ThrottledProgress("write-tags")
+    results: list[dict] = []
+    for i, job in enumerate(jobs):
+        path = job.get("path")
+        tags = job.get("tags") or {}
+        entry = {"path": path, "ok": False, "rolledBack": False, "error": None}
+        backup = None
+        try:
+            if not path or not os.path.exists(path):
+                raise FileNotFoundError("file non trovato")
+            src_hash = _sha256(path)
+            backup = os.path.join(args.backup_dir, f"{i:04d}_{os.path.basename(path)}")
+            shutil.copy2(path, backup)
+            if _sha256(backup) != src_hash:
+                raise IOError("verifica hash del backup fallita")
+
+            audio = mutagen.File(path, easy=True)
+            if audio is None:
+                raise ValueError("formato non supportato da mutagen")
+            for field, value in tags.items():
+                key = field_map.get(field)
+                if key is not None and value is not None:
+                    audio[key] = [str(value)]
+            audio.save()
+            # Riapertura di verifica: il file deve restare leggibile.
+            if mutagen.File(path) is None:
+                raise IOError("il file non è più leggibile dopo la scrittura")
+            entry["ok"] = True
+        except Exception as exc:  # rollback a prova di bomba
+            entry["error"] = str(exc)[:300]
+            if backup and os.path.exists(backup):
+                try:
+                    shutil.copy2(backup, path)
+                    entry["rolledBack"] = _sha256(path) == _sha256(backup)
+                except Exception:
+                    entry["rolledBack"] = False
+        results.append(entry)
+        progress.update(i + 1, len(jobs))
+    progress.finish(len(jobs), len(jobs))
+    ok = sum(1 for r in results if r["ok"])
+    emit({
+        "type": "done",
+        "data": {
+            "written": ok,
+            "failed": len(results) - ok,
+            "backupDir": args.backup_dir,
+            "results": results[:100],
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# download-key — fallback chiave Rekordbox (§4.3, Esperto, in-app)
+# ---------------------------------------------------------------------------
+
+def cmd_download_key(args: argparse.Namespace) -> None:
+    """Scarica la chiave di decrittazione nota del master.db tramite
+    pyrekordbox (la recupera da fonti pubbliche del progetto). Nessun dato
+    dell'utente viene inviato. Dopo, l'ingest diretto può funzionare anche
+    dove l'estrazione locale della chiave fallisce (Rekordbox >= 6.6.5).
+    """
+    try:
+        from pyrekordbox.config import write_db_key_cache  # type: ignore
+        from pyrekordbox import download_db_key  # type: ignore
+    except ImportError:
+        try:
+            # API alternativa nelle versioni recenti di pyrekordbox
+            from pyrekordbox.config import download_db_key, write_db_key_cache  # type: ignore
+        except ImportError:
+            fail("Questa versione di pyrekordbox non espone il download della chiave.")
+            return
+    try:
+        key = download_db_key()
+        write_db_key_cache(key)
+    except Exception as exc:
+        fail(f"Download della chiave non riuscito: {str(exc)[:300]}")
+        return
+    emit({"type": "done", "data": {"keyCached": True}})
+
+
+# ---------------------------------------------------------------------------
 # stems (Fase 2.5, opzionale) — Demucs on-demand
 # ---------------------------------------------------------------------------
 
@@ -678,6 +826,14 @@ def main() -> None:
     p_stems.add_argument("--file", required=True)
     p_stems.add_argument("--out-dir", required=True)
 
+    p_wt = sub.add_parser("write-tags")
+    p_wt.add_argument("--udm-path", required=True)
+    p_wt.add_argument("--tags-json", required=True)
+    p_wt.add_argument("--backup-dir", required=True)
+
+    p_dk = sub.add_parser("download-key")
+    p_dk.add_argument("--udm-path", required=True)
+
     args = parser.parse_args()
 
     if args.command == "ping":
@@ -694,6 +850,10 @@ def main() -> None:
         cmd_analyze_cues(args)
     elif args.command == "stems":
         cmd_stems(args)
+    elif args.command == "write-tags":
+        cmd_write_tags(args)
+    elif args.command == "download-key":
+        cmd_download_key(args)
 
 
 if __name__ == "__main__":

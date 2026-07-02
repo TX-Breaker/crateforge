@@ -1,7 +1,10 @@
 /**
- * Localizzazione minima it/en. Italiano = locale primario (§1).
+ * Localizzazione it/en/fr/de. Italiano = locale primario (§1).
+ * Nota di debito tecnico: le stringhe lunghe dentro le pagine sono ancora in
+ * italiano; questo dizionario copre navigazione e testi comuni. Tracciato in
+ * PROGRESS.md.
  */
-export type Locale = 'it' | 'en';
+export type Locale = 'it' | 'en' | 'fr' | 'de';
 
 const dict = {
   it: {
@@ -30,7 +33,11 @@ const dict = {
     'common.dryRunNote': 'Prima ti mostro un\'anteprima: nessun file viene toccato finché non confermi.',
     'danger.typeToConfirm': 'Per confermare, scrivi',
     'danger.understood': 'Ho capito i rischi',
-    'safety.readonly': 'I tuoi file originali restano intatti: CrateForge lavora solo su copie.'
+    'safety.readonly': 'I tuoi file originali restano intatti: CrateForge lavora solo su copie.',
+    'target.udm': 'Salvato nel database di CrateForge (copia di lavoro) — file originali intatti',
+    'target.copy': 'Salvato su una copia — file originali intatti',
+    'target.original': 'ATTENZIONE: salvato sui FILE ORIGINALI',
+    'target.xml': 'Scritto in un file XML da importare a mano in Rekordbox'
   },
   en: {
     'nav.dashboard': 'Overview',
@@ -58,7 +65,75 @@ const dict = {
     'common.dryRunNote': 'You get a preview first: nothing is touched until you confirm.',
     'danger.typeToConfirm': 'To confirm, type',
     'danger.understood': 'I understand the risks',
-    'safety.readonly': 'Your original files stay untouched: CrateForge only works on copies.'
+    'safety.readonly': 'Your original files stay untouched: CrateForge only works on copies.',
+    'target.udm': 'Saved to the CrateForge database (working copy) — original files untouched',
+    'target.copy': 'Saved to a copy — original files untouched',
+    'target.original': 'WARNING: saved to the ORIGINAL FILES',
+    'target.xml': 'Written to an XML file to import manually into Rekordbox'
+  },
+  fr: {
+    'nav.dashboard': 'Vue d\'ensemble',
+    'nav.backup': 'Sauvegarde',
+    'nav.orphans': 'Fichiers orphelins',
+    'nav.report': 'Rapport Excel',
+    'nav.converter': 'Convertir la bibliothèque',
+    'nav.relocator': 'Retrouver les fichiers déplacés',
+    'nav.dedup': 'Doublons (empreinte)',
+    'nav.autocue': 'Auto-Cue',
+    'nav.tagger': 'Auto-Tagger',
+    'nav.stems': 'Stems',
+    'nav.inbox': 'Nouveaux achats',
+    'nav.planner': 'Set Planner',
+    'nav.review': 'À vérifier',
+    'nav.log': 'Journal des opérations',
+    'nav.settings': 'Paramètres',
+    'nav.about': 'À propos',
+    'mode.simple': 'Simple',
+    'mode.expert': 'Expert',
+    'common.cancel': 'Annuler',
+    'common.continue': 'Continuer',
+    'common.close': 'Fermer',
+    'common.browse': 'Parcourir…',
+    'common.dryRunNote': 'Un aperçu d\'abord : rien n\'est modifié avant votre confirmation.',
+    'danger.typeToConfirm': 'Pour confirmer, tapez',
+    'danger.understood': 'J\'ai compris les risques',
+    'safety.readonly': 'Vos fichiers originaux restent intacts : CrateForge ne travaille que sur des copies.',
+    'target.udm': 'Enregistré dans la base CrateForge (copie de travail) — fichiers originaux intacts',
+    'target.copy': 'Enregistré sur une copie — fichiers originaux intacts',
+    'target.original': 'ATTENTION : enregistré sur les FICHIERS ORIGINAUX',
+    'target.xml': 'Écrit dans un fichier XML à importer manuellement dans Rekordbox'
+  },
+  de: {
+    'nav.dashboard': 'Übersicht',
+    'nav.backup': 'Backup',
+    'nav.orphans': 'Verwaiste Dateien',
+    'nav.report': 'Excel-Bericht',
+    'nav.converter': 'Bibliothek konvertieren',
+    'nav.relocator': 'Verschobene Dateien finden',
+    'nav.dedup': 'Duplikate (Fingerprint)',
+    'nav.autocue': 'Auto-Cue',
+    'nav.tagger': 'Auto-Tagger',
+    'nav.stems': 'Stems',
+    'nav.inbox': 'Neue Käufe',
+    'nav.planner': 'Set Planner',
+    'nav.review': 'Zu überprüfen',
+    'nav.log': 'Vorgangsprotokoll',
+    'nav.settings': 'Einstellungen',
+    'nav.about': 'Info',
+    'mode.simple': 'Einfach',
+    'mode.expert': 'Experte',
+    'common.cancel': 'Abbrechen',
+    'common.continue': 'Weiter',
+    'common.close': 'Schließen',
+    'common.browse': 'Durchsuchen…',
+    'common.dryRunNote': 'Zuerst eine Vorschau: Nichts wird geändert, bis du bestätigst.',
+    'danger.typeToConfirm': 'Zum Bestätigen tippe',
+    'danger.understood': 'Ich habe die Risiken verstanden',
+    'safety.readonly': 'Deine Originaldateien bleiben unangetastet: CrateForge arbeitet nur auf Kopien.',
+    'target.udm': 'In der CrateForge-Datenbank gespeichert (Arbeitskopie) — Originale unangetastet',
+    'target.copy': 'Auf einer Kopie gespeichert — Originale unangetastet',
+    'target.original': 'ACHTUNG: auf den ORIGINALDATEIEN gespeichert',
+    'target.xml': 'In eine XML-Datei geschrieben — manuell in Rekordbox importieren'
   }
 } as const;
 
@@ -67,3 +142,10 @@ export type MsgKey = keyof (typeof dict)['it'];
 export function t(locale: Locale, key: MsgKey): string {
   return dict[locale][key] ?? dict.it[key] ?? key;
 }
+
+export const LOCALES: { id: Locale; label: string }[] = [
+  { id: 'it', label: 'Italiano' },
+  { id: 'en', label: 'English' },
+  { id: 'fr', label: 'Français' },
+  { id: 'de', label: 'Deutsch' }
+];

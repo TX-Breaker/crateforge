@@ -4,6 +4,7 @@ import { migrate } from '@core/schema';
 import {
   applyProposals,
   proposeTags,
+  queryDiscogs,
   queryMusicBrainz,
   RateLimiter,
   type FetchFn
@@ -61,6 +62,36 @@ describe('queryMusicBrainz', () => {
       throw new Error('ENOTFOUND');
     };
     expect(await queryMusicBrainz('A', 'B', fn, fastLimiter(), 1)).toBeNull();
+  });
+});
+
+describe('queryDiscogs', () => {
+  it('preferisce style (più specifico) al genre macro', async () => {
+    const { fn, calls } = mockFetch([
+      {
+        status: 200,
+        body: { results: [{ year: '2019', genre: ['Electronic'], style: ['Tech House'] }] }
+      }
+    ]);
+    const r = await queryDiscogs('Fisher', 'Losing It', 'tok123', fn, fastLimiter());
+    expect(r).toEqual({ year: '2019', genre: 'Tech House' });
+    expect(calls[0]).toContain('token=tok123');
+    expect(calls[0]).toContain('api.discogs.com');
+  });
+
+  it('429 → retry con backoff', async () => {
+    const { fn, calls } = mockFetch([
+      { status: 429 },
+      { status: 200, body: { results: [{ year: '2020', genre: ['House'] }] } }
+    ]);
+    const r = await queryDiscogs('A', 'B', 't', fn, fastLimiter());
+    expect(r?.year).toBe('2020');
+    expect(calls.length).toBe(2);
+  });
+
+  it('provider discogs senza token: errore chiaro da proposeTags', async () => {
+    const db = memDb();
+    await expect(proposeTags(db, { provider: 'discogs' })).rejects.toThrow(/token/i);
   });
 });
 

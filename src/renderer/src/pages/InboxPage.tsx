@@ -3,6 +3,7 @@ import { FolderSync, FileX2, PackageOpen, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Checkbox, Switch } from '@/components/ui/misc';
+import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 
 interface InboxItem {
@@ -216,7 +217,10 @@ export function InboxPage() {
       {message && (
         <Alert>
           <FolderSync className="h-4 w-4" />
-          <AlertDescription>{message}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{message}</p>
+            <SaveTargetNotice target="xml" />
+          </AlertDescription>
         </Alert>
       )}
       {error && (

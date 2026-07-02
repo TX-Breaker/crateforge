@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 
 interface BrokenRow {
@@ -173,7 +174,10 @@ export function RelocatorPage() {
       <JobProgressBar active={busy} />
       {outcome && (
         <Alert>
-          <AlertDescription>{outcome}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{outcome}</p>
+            <SaveTargetNotice target="xml" />
+          </AlertDescription>
         </Alert>
       )}
       {error && (

@@ -1,5 +1,5 @@
 import type BetterSqlite3 from 'better-sqlite3';
-import { mkdir, rename } from 'fs/promises';
+import { mkdir, rename, rm, stat } from 'fs/promises';
 import { basename, join, normalize } from 'path';
 import { AUDIO_EXTENSIONS, walkFiles } from '../fsutil';
 import { logOperation } from '@core/udm';
@@ -113,4 +113,53 @@ export async function quarantineOrphans(
     }
   }
   return { moved, failed, quarantineDir };
+}
+
+export interface DeleteResult {
+  deleted: number;
+  freedBytes: number;
+  failed: { path: string; error: string }[];
+}
+
+/**
+ * Eliminazione DEFINITIVA degli orfani (fase intermedia, opt-in "scritture
+ * dirette"). Irreversibile per design: la UI la sblocca solo con il setting
+ * dedicato attivo e doppia conferma "ELIMINA". La quarantena resta la strada
+ * consigliata.
+ */
+export async function deleteOrphans(
+  db: BetterSqlite3.Database,
+  files: string[],
+  dryRun: boolean
+): Promise<DeleteResult> {
+  const failed: DeleteResult['failed'] = [];
+  let deleted = 0;
+  let freedBytes = 0;
+
+  if (dryRun) {
+    for (const f of files) {
+      try {
+        freedBytes += (await stat(f)).size;
+      } catch {
+        // file già assente: non conta
+      }
+    }
+    logOperation(db, 'orphans.delete', null, 'dry-run', `${files.length} file, ${freedBytes} byte`);
+    return { deleted: files.length, freedBytes, failed };
+  }
+
+  for (const f of files) {
+    try {
+      const size = (await stat(f)).size;
+      await rm(f);
+      deleted++;
+      freedBytes += size;
+      logOperation(db, 'orphans.delete', f, 'ok', 'ELIMINATO DEFINITIVAMENTE (scritture dirette)');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failed.push({ path: f, error: msg });
+      logOperation(db, 'orphans.delete', f, 'error', msg);
+    }
+  }
+  return { deleted, freedBytes, failed };
 }

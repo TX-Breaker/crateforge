@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
 import { migrate } from '@core/schema';
-import { findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
+import { deleteOrphans, findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
 
 let tmp: string;
 let db: InstanceType<typeof Database>;
@@ -69,5 +69,34 @@ describe('quarantineOrphans', () => {
     expect(r.failed).toHaveLength(0);
     expect(existsSync(orphan)).toBe(false);
     expect(existsSync(join(r.quarantineDir, 'orphan1.mp3'))).toBe(true);
+  });
+});
+
+describe('deleteOrphans (scritture dirette, fase intermedia)', () => {
+  it('dry-run: conta i byte, non elimina nulla', async () => {
+    const music = makeMusicDir();
+    const orphan = join(music, 'orphan1.mp3');
+    const r = await deleteOrphans(db, [orphan], true);
+    expect(r.freedBytes).toBe(200);
+    expect(existsSync(orphan)).toBe(true);
+  });
+
+  it('esecuzione: elimina, riporta byte liberati, logga', async () => {
+    const music = makeMusicDir();
+    const orphan = join(music, 'orphan1.mp3');
+    const r = await deleteOrphans(db, [orphan], false);
+    expect(r.deleted).toBe(1);
+    expect(r.freedBytes).toBe(200);
+    expect(existsSync(orphan)).toBe(false);
+    const log = db.prepare(`SELECT detail FROM oplog ORDER BY id DESC LIMIT 1`).get() as {
+      detail: string;
+    };
+    expect(log.detail).toContain('DEFINITIVAMENTE');
+  });
+
+  it('file inesistente: finisce in failed, nessun crash', async () => {
+    const r = await deleteOrphans(db, [join(tmp, 'ghost.mp3')], false);
+    expect(r.deleted).toBe(0);
+    expect(r.failed).toHaveLength(1);
   });
 });

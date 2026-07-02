@@ -19,6 +19,27 @@ pyinstaller --noconfirm --clean --onedir `
   --collect-all pyrekordbox `
   sidecar.py
 
+# fpcalc (Chromaprint) incluso nel pacchetto: l'utente non deve installarlo.
+$fpcalcVersion = '1.5.1'
+$distDir = Join-Path $PSScriptRoot 'dist\crateforge-sidecar'
+$fpcalcDest = Join-Path $distDir 'fpcalc.exe'
+if (-not (Test-Path $fpcalcDest)) {
+  $zipUrl = "https://github.com/acoustid/chromaprint/releases/download/v$fpcalcVersion/chromaprint-fpcalc-$fpcalcVersion-windows-x86_64.zip"
+  $tmpZip = Join-Path $env:TEMP "fpcalc-$fpcalcVersion.zip"
+  try {
+    Write-Host "Scarico fpcalc $fpcalcVersion..."
+    Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -UseBasicParsing
+    $tmpExtract = Join-Path $env:TEMP "fpcalc-extract"
+    Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
+    $exe = Get-ChildItem -Path $tmpExtract -Recurse -Filter 'fpcalc.exe' | Select-Object -First 1
+    Copy-Item $exe.FullName $fpcalcDest
+    Remove-Item $tmpZip, $tmpExtract -Recurse -Force -Confirm:$false
+    Write-Host "fpcalc incluso: $fpcalcDest"
+  } catch {
+    Write-Warning "Download fpcalc fallito ($_). Il fingerprint usera' fpcalc dal PATH se presente."
+  }
+}
+
 Write-Host ""
-Write-Host "Sidecar pronto in: $PSScriptRoot\dist\crateforge-sidecar\"
+Write-Host "Sidecar pronto in: $distDir"
 Write-Host "Nota falsi positivi AV: se Defender segnala il binario, e' un falso positivo tipico di PyInstaller. Vedi README."

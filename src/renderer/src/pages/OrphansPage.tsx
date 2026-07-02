@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { FileWarning, FolderSearch, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { FileWarning, FolderSearch, ShieldCheck, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Checkbox } from '@/components/ui/misc';
@@ -36,8 +36,14 @@ export function OrphansPage() {
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [directWrites, setDirectWrites] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.crateforge.settings.get('directWrites').then((v) => setDirectWrites(v === '1'));
+  }, []);
 
   const pageItems = useMemo(
     () => (result ? result.orphans.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) : []),
@@ -114,6 +120,33 @@ export function OrphansPage() {
     }
   };
 
+  const doDelete = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const files = [...selected];
+      const r = await window.crateforge.orphans.remove(files, false);
+      setOutcome(
+        `ELIMINATI DEFINITIVAMENTE ${r.deleted} file (${formatBytes(r.freedBytes)} liberati).` +
+          (r.failed.length ? ` ATTENZIONE: ${r.failed.length} non eliminati.` : '')
+      );
+      const failedSet = new Set(r.failed.map((f: { path: string }) => f.path));
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              orphans: prev.orphans.filter((o) => !selected.has(o.path) || failedSet.has(o.path))
+            }
+          : prev
+      );
+      setSelected(new Set());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -127,9 +160,11 @@ export function OrphansPage() {
         <ShieldCheck className="h-4 w-4" />
         <AlertTitle>Come funziona la quarantena</AlertTitle>
         <AlertDescription>
-          CrateForge non elimina mai i file: li sposta in una cartella di quarantena datata, da cui
-          puoi ripristinarli quando vuoi. La scansione confronta il disco con la libreria che hai
-          importato: importa prima la libreria dalla Panoramica.
+          Di default CrateForge non elimina i file: li sposta in una cartella di quarantena
+          datata, da cui puoi ripristinarli quando vuoi. (L'eliminazione definitiva esiste solo
+          se attivi le "scritture dirette" nelle Impostazioni, con doppia conferma.) La scansione
+          confronta il disco con la libreria che hai importato: importa prima la libreria dalla
+          Panoramica.
         </AlertDescription>
       </Alert>
 
@@ -217,13 +252,30 @@ export function OrphansPage() {
                     value={quarantineDir}
                     onBrowse={() => pickDir(setQuarantineDir)}
                   />
-                  <Button
-                    variant="destructive"
-                    disabled={selected.size === 0 || !quarantineDir || busy}
-                    onClick={() => setConfirmOpen(true)}
-                  >
-                    <FileWarning /> Sposta in quarantena ({selected.size})
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="destructive"
+                      disabled={selected.size === 0 || !quarantineDir || busy}
+                      onClick={() => setConfirmOpen(true)}
+                    >
+                      <FileWarning /> Sposta in quarantena ({selected.size})
+                    </Button>
+                    {directWrites && (
+                      <Button
+                        variant="destructive"
+                        disabled={selected.size === 0 || busy}
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 /> Elimina definitivamente ({selected.size})
+                      </Button>
+                    )}
+                  </div>
+                  {directWrites && (
+                    <p className="text-xs text-muted-foreground">
+                      L'eliminazione definitiva è attiva perché hai abilitato le scritture dirette
+                      nelle Impostazioni. La quarantena resta la strada consigliata: è reversibile.
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -241,6 +293,28 @@ export function OrphansPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <DangerConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Eliminare DEFINITIVAMENTE questi file?"
+        confirmWord="ELIMINA"
+        confirmLabel={`Elimina per sempre ${selected.size} file`}
+        onConfirm={doDelete}
+        description={
+          <>
+            <p>
+              Stai per eliminare <b>per sempre</b>{' '}
+              <b>{selected.size.toLocaleString('it-IT')} file</b> ({formatBytes(selectedBytes)})
+              dai tuoi FILE ORIGINALI. Non c'è cestino, non c'è quarantena, non c'è ritorno.
+            </p>
+            <p>
+              Se hai anche il minimo dubbio, usa invece la quarantena: fa spazio uguale ma resta
+              reversibile.
+            </p>
+          </>
+        }
+      />
 
       <DangerConfirmDialog
         open={confirmOpen}

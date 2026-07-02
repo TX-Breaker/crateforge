@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Input } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 
 interface TrackRow {
@@ -62,9 +63,10 @@ export function StemsPage() {
       <Alert variant="warning">
         <AlertTitle>Operazione lunga e pesante (modalità Esperto)</AlertTitle>
         <AlertDescription>
-          Richiede il livello AI del sidecar con Demucs installato (vedi{' '}
-          <code>requirements-ai.txt</code>). Su un portatile senza GPU un brano può richiedere
-          diversi minuti e usare molta CPU/RAM. Puoi annullare in qualsiasi momento.
+          La separazione usa <b>Demucs</b> (modello AI di Meta) e gira <b>interamente sul tuo
+          computer</b>: nessun file viene caricato su internet. Richiede il livello AI del sidecar
+          (vedi <code>requirements-ai.txt</code>). Su un portatile senza GPU un brano può
+          richiedere diversi minuti e usare molta CPU/RAM. Puoi annullare in qualsiasi momento.
         </AlertDescription>
       </Alert>
 
@@ -124,7 +126,10 @@ export function StemsPage() {
 
       {outcome && (
         <Alert>
-          <AlertDescription>{outcome}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{outcome}</p>
+            <SaveTargetNotice target="copy" />
+          </AlertDescription>
         </Alert>
       )}
       {error && (

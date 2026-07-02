@@ -1,11 +1,18 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type BetterSqlite3 from 'better-sqlite3';
 import { randomUUID } from 'crypto';
-import { getSetting, getTracksPage, logOperation, setSetting } from '@core/udm';
+import {
+  getPlaylistTracksPage,
+  getSetting,
+  getTracksPage,
+  logOperation,
+  setSetting
+} from '@core/udm';
 import { ingestCollectionXml } from '@core/xmlCollection';
 import { executeBackup, planBackup, BackupOptions, BackupPlan } from '@services/backup/incrementalBackup';
-import { findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
+import { deleteOrphans, findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
 import { generateExcelReport } from '@services/excel/reportGenerator';
+import { readReportPage } from '@services/excel/reportViewer';
 import { findBrokenTracks, matchByFilename, RelocationMatch } from '@services/relocator/relocator';
 import { writeRekordboxXml } from '@adapters/rekordbox/xmlWriter';
 import { writeRelocationXml } from '@adapters/rekordbox/relocationXml';
@@ -14,7 +21,9 @@ import { writeVirtualDjXml } from '@adapters/virtualdj/vdjWriter';
 import { REKORDBOX_XML_LIMITS } from '@adapters/common';
 import { SERATO_STATUS } from '@adapters/serato';
 import { ENGINE_STATUS } from '@adapters/engine';
-import { applyProposals, proposeTags, TagProposal } from '@services/tagger/autoTagger';
+import { applyProposals, proposeTags, TagProposal, TagProvider } from '@services/tagger/autoTagger';
+import { app } from 'electron';
+import { join } from 'path';
 import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDaemon';
 import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
 import { writeInboxXml } from '@adapters/rekordbox/inboxXml';
@@ -40,6 +49,18 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   ipcMain.handle('settings:get', (_e, key: string) => getSetting(db, key));
   ipcMain.handle('settings:set', (_e, key: string, value: string) => setSetting(db, key, value));
   ipcMain.handle('sidecar:check', () => checkSidecar());
+
+  // Fallback chiave Rekordbox (§4.3) in-app: nessun terminale, nessun sito.
+  // Registrato qui ma usa runSidecarJob (definito sotto) solo a runtime.
+  ipcMain.handle('sidecar:downloadKey', async () => {
+    const check = checkSidecar();
+    if (!check.available) {
+      return { ok: false, message: 'Modulo di lettura non disponibile su questo computer.' };
+    }
+    const r = await runSidecarJob('download-key', 'download-key', []);
+    logOperation(db, 'sidecar.download-key', null, r.ok ? 'ok' : 'error', r.ok ? undefined : r.message);
+    return r;
+  });
   ipcMain.handle('export:limits', () => ({
     rekordboxXml: REKORDBOX_XML_LIMITS,
     serato: SERATO_STATUS,
@@ -48,6 +69,9 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // ---- libreria (paginata) ----
   ipcMain.handle('library:page', (_e, q) => getTracksPage(db, q));
+  ipcMain.handle('library:pageByPlaylist', (_e, playlistId: number, offset: number, limit: number) =>
+    getPlaylistTracksPage(db, playlistId, offset, Math.min(limit, 200))
+  );
   ipcMain.handle('library:stats', () => ({
     tracks: (db.prepare('SELECT COUNT(*) c FROM tracks').get() as { c: number }).c,
     playlists: (db.prepare('SELECT COUNT(*) c FROM playlists').get() as { c: number }).c,
@@ -131,7 +155,8 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
             fallbackXml: true,
             message:
               (lastError ?? 'Lettura del database non riuscita.') +
-              ' Puoi usare la modalità solo-XML: esporta la collection da Rekordbox e importala qui.'
+              ' Puoi usare la modalità solo-XML (esporta la collection da Rekordbox e importala qui)' +
+              ' oppure, in modalità Esperto: Impostazioni → "Scarica chiave di lettura" e riprova.'
           };
         }
         logOperation(db, 'ingest.masterdb', masterDbPath, 'ok');
@@ -217,6 +242,17 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
       quarantineOrphans(db, files, quarantineRoot, dryRun)
   );
 
+  // Eliminazione definitiva: SOLO con il setting "scritture dirette" attivo
+  // (fase intermedia). Il gate è anche qui nel main, non solo in UI.
+  ipcMain.handle('orphans:delete', (_e, files: string[], dryRun: boolean) => {
+    if (getSetting(db, 'directWrites') !== '1') {
+      throw new Error(
+        'Le scritture dirette sono disattivate. Attivale in Impostazioni → Esperto.'
+      );
+    }
+    return deleteOrphans(db, files, dryRun);
+  });
+
   // ---- report excel ----
   ipcMain.handle('report:generate', async (_e, opts) => {
     const progress = new ThrottledProgress(win().webContents);
@@ -230,6 +266,11 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     logOperation(db, 'report.excel', result.outPath, 'ok', `${result.rows} righe`);
     return result;
   });
+
+  // Visualizzatore report: pagine di max 500 righe, mai il file intero su IPC.
+  ipcMain.handle('report:view', (_e, filePath: string, offset: number, limit: number) =>
+    readReportPage(filePath, offset, limit)
+  );
 
   // ---- export ----
   ipcMain.handle('export:rekordboxXml', (_e, outPath: string, sel) => {
@@ -463,16 +504,24 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   );
 
   // ---- auto-tagger (Fase 2.4): solo query testuali, mai upload audio ----
-  ipcMain.handle('tagger:propose', async (_e, limit?: number) => {
+  ipcMain.handle('tagger:propose', async (_e, limit?: number, provider?: TagProvider) => {
     const progress = new ThrottledProgress(win().webContents);
     const jobId = randomUUID();
     try {
       const r = await proposeTags(db, {
         limit,
+        provider,
+        discogsToken: getSetting(db, 'discogsToken') ?? undefined,
         onProgress: (done, total) => progress.update({ jobId, phase: 'tagger', done, total })
       });
       progress.finish({ jobId, phase: 'tagger', done: 1, total: 1 });
-      logOperation(db, 'tagger.propose', null, 'dry-run', `${r.proposals.length} proposte su ${r.queried} brani`);
+      logOperation(
+        db,
+        'tagger.propose',
+        provider ?? 'musicbrainz',
+        'dry-run',
+        `${r.proposals.length} proposte su ${r.queried} brani`
+      );
       return { ok: true, ...r };
     } catch (err) {
       progress.finish({ jobId, phase: 'tagger', done: 1, total: 1 });
@@ -481,8 +530,59 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     }
   });
 
-  ipcMain.handle('tagger:apply', (_e, proposals: TagProposal[]) =>
-    applyProposals(db, proposals)
+  // target 'udm' (default, sicuro) oppure 'original': scrittura ID3 sui file
+  // originali via sidecar mutagen, con backup+hash+rollback. Gate nel main.
+  ipcMain.handle(
+    'tagger:apply',
+    async (_e, proposals: TagProposal[], target: 'udm' | 'original' = 'udm') => {
+      if (target === 'udm') return { ...applyProposals(db, proposals), target: 'udm' };
+
+      if (getSetting(db, 'directWrites') !== '1') {
+        throw new Error(
+          'Le scritture dirette sono disattivate. Attivale in Impostazioni → Esperto.'
+        );
+      }
+      const check = checkSidecar();
+      if (!check.available) {
+        return { ok: false, target: 'original', message: 'Modulo sidecar non disponibile.' };
+      }
+      // Raggruppa le proposte per file (il path viene dall'UDM).
+      const pathStmt = db.prepare(`SELECT path FROM tracks WHERE id = ?`);
+      const byTrack = new Map<number, { path: string; tags: Record<string, string> }>();
+      for (const p of proposals) {
+        const row = pathStmt.get(p.trackId) as { path: string | null } | undefined;
+        if (!row?.path) continue;
+        const entry = byTrack.get(p.trackId) ?? { path: row.path, tags: {} };
+        entry.tags[p.field] = p.proposed;
+        byTrack.set(p.trackId, entry);
+      }
+      const jobs = [...byTrack.values()];
+      const backupDir = join(
+        app.getPath('userData'),
+        'backups',
+        `id3-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
+      );
+      const r = await runSidecarJob('write-tags', 'write-tags', [
+        '--tags-json',
+        JSON.stringify(jobs),
+        '--backup-dir',
+        backupDir
+      ]);
+      if (!r.ok) {
+        logOperation(db, 'tagger.apply.original', null, 'error', r.message);
+        return { ok: false, target: 'original', message: r.message };
+      }
+      // Aggiorna anche l'UDM così la libreria interna resta allineata.
+      applyProposals(db, proposals);
+      logOperation(
+        db,
+        'tagger.apply.original',
+        backupDir,
+        'ok',
+        `SCRITTURA SU ORIGINALI: ${(r.data as { written?: number })?.written ?? 0} file, backup in ${backupDir}`
+      );
+      return { ok: true, target: 'original', ...r.data, backupDir };
+    }
   );
 
   // ---- stems (Fase 2.5, opzionale e pesante) ----

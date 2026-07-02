@@ -34,7 +34,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       ]);
       if (t === 'light' || t === 'dark' || t === 'system') setThemeState(t);
       if (m === 'simple' || m === 'expert') setModeState(m);
-      if (l === 'it' || l === 'en') setLocaleState(l);
+      if (l === 'it' || l === 'en' || l === 'fr' || l === 'de') setLocaleState(l);
     })();
   }, []);
 

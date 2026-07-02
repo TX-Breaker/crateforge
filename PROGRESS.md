@@ -78,6 +78,39 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [ ] UI waveform per i cue (ora lista editabile)
 - [ ] Verifica manuale con fpcalc/aubio installati su questa macchina
 
+## FASE INTERMEDIA (post-F3, richieste utente 02/07/2026) — COMPLETATA
+- [x] Scritture dirette sui file originali (opt-in): setting Esperto `directWrites`
+      con doppio disclaimer; gate anche lato main (non solo UI). Sbloccate:
+      eliminazione DEFINITIVA orfani (conferma "ELIMINA") e scrittura tag ID3
+      sugli originali via sidecar mutagen (backup per-file verificato con hash,
+      rollback automatico, conferma "SCRIVI"). Il master.db resta SEMPRE
+      read-only (cifrato, schema non documentato: un errore = libreria persa) —
+      motivato in UI
+- [x] Visualizzatore Excel in ReportPage: lettura paginata in main (max 500
+      righe/colpo), scroll orizzontale, colonne ridimensionabili col mouse,
+      larghezze persistite per nome colonna e resettabili
+- [x] i18n francese + tedesco (dizionario nav/common/target; DEBITO: i testi
+      lunghi delle pagine restano in italiano, vale anche per l'inglese)
+- [x] fpcalc (Chromaprint 1.5.1) incluso nel pacchetto: download automatico nei
+      build script (ps1+sh), sidecar lo cerca accanto al proprio eseguibile →
+      l'utente non installa nulla. Verificato nel pacchetto win-unpacked
+- [x] Auto-Cue rifatto: browser della libreria (ricerca o playlist intera),
+      abilita/disabilita per brano, analisi batch interrompibile, revisione e
+      salvataggio per-brano o "salva tutti"
+- [x] Auto-Tagger: provider Discogs (token personale nelle Impostazioni,
+      style>genre, retry su 429) accanto a MusicBrainz
+- [x] download-key pyrekordbox in-app (§4.3): bottone in Impostazioni (Esperto),
+      suggerito anche nel messaggio di errore dell'ingest master.db
+- [x] SaveTargetNotice: ogni esito dichiara la destinazione (UDM/copia/XML/
+      ORIGINALI) — su Tagger, AutoCue, Dedup, Stems, Converter, Inbox, Relocator
+- [x] Stems: dichiarato in UI che Demucs gira 100% in locale, nessun upload
+- [x] Bug visivo Alert (titolo sovrapposto all'icona): `[&>svg~*]:pl-7`
+- [x] Sidecar ricompilato (write-tags, download-key, fpcalc path); 69/69 test,
+      typecheck pulito, dist rigenerato, smoke run ok
+- [ ] DEBITO: localizzazione completa dei testi di pagina (en/fr/de)
+- [ ] DEBITO: test automatico di write-tags (richiede file audio veri con tag;
+      oggi coperto dal rollback design + verifica manuale)
+
 ## FASE 3 — Power user (modalità Esperto) — CORE FUNZIONANTE
 - [x] Sync Daemon "Nuovi Acquisti": fs.watch ricorsivo con debounce 2s, scansione
       idempotente (skip file già in coda o in libreria), tag via music-metadata,

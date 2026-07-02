@@ -71,6 +71,29 @@ export function getTracksPage(db: BetterSqlite3.Database, q: PageQuery): { rows:
   return { rows, total };
 }
 
+/** Brani di una playlist, paginati e in ordine di posizione. */
+export function getPlaylistTracksPage(
+  db: BetterSqlite3.Database,
+  playlistId: number,
+  offset: number,
+  limit: number
+): { rows: TrackRow[]; total: number } {
+  const total = (
+    db
+      .prepare(`SELECT COUNT(*) AS c FROM playlist_tracks WHERE playlist_id = ?`)
+      .get(playlistId) as { c: number }
+  ).c;
+  const rows = db
+    .prepare(
+      `SELECT t.* FROM playlist_tracks pt
+       JOIN tracks t ON t.id = pt.track_id
+       WHERE pt.playlist_id = ?
+       ORDER BY pt.position LIMIT ? OFFSET ?`
+    )
+    .all(playlistId, limit, offset) as TrackRow[];
+  return { rows, total };
+}
+
 export function logOperation(
   db: BetterSqlite3.Database,
   operation: string,

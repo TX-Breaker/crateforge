@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { FileSpreadsheet } from 'lucide-react';
+import { Eye, FileSpreadsheet, FolderOpen } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, Label, Switch } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { ExcelViewer } from '@/components/ExcelViewer';
 
 /**
  * Generatore di Report Excel (§6 Fase 1.3). Export on-demand: il file viene
@@ -15,6 +16,7 @@ export function ReportPage() {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewPath, setViewPath] = useState<string | null>(null);
 
   const doGenerate = async () => {
     const outPath = await window.crateforge.dialog.saveFile('libreria-crateforge.xlsx', [
@@ -31,6 +33,7 @@ export function ReportPage() {
         groupByArtist
       });
       setOutcome(`Report creato: ${r.rows.toLocaleString('it-IT')} brani in ${r.outPath}`);
+      setViewPath(r.outPath);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -87,6 +90,32 @@ export function ReportPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="h-4 w-4" /> Anteprima report
+          </CardTitle>
+          <CardDescription>
+            Guarda il file senza aprire Excel. Trascina il bordo destro di un'intestazione per
+            allargare la colonna: la larghezza viene ricordata (e puoi reimpostarla).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              const p = await window.crateforge.dialog.openFile([
+                { name: 'Cartella di lavoro Excel', extensions: ['xlsx'] }
+              ]);
+              if (p) setViewPath(p);
+            }}
+          >
+            <FolderOpen /> Apri un report esistente…
+          </Button>
+          {viewPath && <ExcelViewer filePath={viewPath} />}
+        </CardContent>
+      </Card>
     </div>
   );
 }

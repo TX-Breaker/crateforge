@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Checkbox } from '@/components/ui/misc';
 import { DangerConfirmDialog } from '@/components/DangerConfirmDialog';
 import { JobProgressBar } from '@/components/JobProgress';
+import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 import { formatBytes } from '@/lib/utils';
 
@@ -108,10 +109,10 @@ export function DedupPage() {
       <Alert variant="warning">
         <AlertTitle>Funzione sperimentale (modalità Esperto)</AlertTitle>
         <AlertDescription>
-          L'impronta acustica (Chromaprint) riconosce lo stesso audio con encoding diversi nella
-          maggior parte dei casi, ma non è infallibile: controlla sempre i gruppi prima di agire.
-          Serve <b>fpcalc</b> installato. Richiede una scansione completa dei file: su librerie
-          grandi può durare parecchi minuti.
+          L'impronta acustica (Chromaprint, inclusa in CrateForge: niente da installare)
+          riconosce lo stesso audio con encoding diversi nella maggior parte dei casi, ma non è
+          infallibile: controlla sempre i gruppi prima di agire. Richiede una scansione completa
+          dei file: su librerie grandi può durare parecchi minuti.
         </AlertDescription>
       </Alert>
 
@@ -199,7 +200,10 @@ export function DedupPage() {
 
       {outcome && (
         <Alert>
-          <AlertDescription>{outcome}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{outcome}</p>
+            <SaveTargetNotice target="copy" />
+          </AlertDescription>
         </Alert>
       )}
       {error && (

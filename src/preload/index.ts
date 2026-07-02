@@ -10,11 +10,14 @@ const api = {
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
   },
   sidecar: {
-    check: () => ipcRenderer.invoke('sidecar:check')
+    check: () => ipcRenderer.invoke('sidecar:check'),
+    downloadKey: () => ipcRenderer.invoke('sidecar:downloadKey')
   },
   library: {
     page: (q: { offset: number; limit: number; search?: string; needsReview?: boolean }) =>
       ipcRenderer.invoke('library:page', q),
+    pageByPlaylist: (playlistId: number, offset: number, limit: number) =>
+      ipcRenderer.invoke('library:pageByPlaylist', playlistId, offset, limit),
     stats: () => ipcRenderer.invoke('library:stats'),
     ingestXml: (xmlPath: string) => ipcRenderer.invoke('library:ingestXml', xmlPath),
     ingestMasterdb: (dbPath: string, optionsPath?: string) =>
@@ -27,10 +30,14 @@ const api = {
   orphans: {
     scan: (musicDir: string) => ipcRenderer.invoke('orphans:scan', musicDir),
     quarantine: (files: string[], root: string, dryRun: boolean) =>
-      ipcRenderer.invoke('orphans:quarantine', files, root, dryRun)
+      ipcRenderer.invoke('orphans:quarantine', files, root, dryRun),
+    remove: (files: string[], dryRun: boolean) =>
+      ipcRenderer.invoke('orphans:delete', files, dryRun)
   },
   report: {
-    generate: (opts: unknown) => ipcRenderer.invoke('report:generate', opts)
+    generate: (opts: unknown) => ipcRenderer.invoke('report:generate', opts),
+    view: (filePath: string, offset: number, limit: number) =>
+      ipcRenderer.invoke('report:view', filePath, offset, limit)
   },
   exporter: {
     limits: () => ipcRenderer.invoke('export:limits'),
@@ -66,8 +73,10 @@ const api = {
     ) => ipcRenderer.invoke('cues:save', trackId, cues)
   },
   tagger: {
-    propose: (limit?: number) => ipcRenderer.invoke('tagger:propose', limit),
-    apply: (proposals: unknown[]) => ipcRenderer.invoke('tagger:apply', proposals)
+    propose: (limit?: number, provider?: 'musicbrainz' | 'discogs') =>
+      ipcRenderer.invoke('tagger:propose', limit, provider),
+    apply: (proposals: unknown[], target?: 'udm' | 'original') =>
+      ipcRenderer.invoke('tagger:apply', proposals, target)
   },
   stems: {
     run: (trackId: number, outDir: string) => ipcRenderer.invoke('stems:run', trackId, outDir)
