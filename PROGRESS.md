@@ -51,7 +51,9 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [ ] Test manuale UI umano su tutte le pagine (click-through con dati reali)
 - [ ] Ingest end-to-end da un VERO master.db (fixture minima non basta per pyrekordbox ORM: prevista opzione utente §11)
 - [ ] Istruzioni con screenshot per l'export XML manuale (ora solo testuali)
-- [ ] Icona applicazione (ora icona Electron di default)
+- [x] Icona applicazione: `build/icon.png` + `icon.ico` generati (crate+vinili+scintilla,
+      tema dark/ambra); electron-builder li rileva via buildResources e genera
+      l'icns per mac. Rigenerabile: era PIL-script one-shot, il PNG è la fonte
 
 ## FASE 2 — AI (modalità Esperto, sperimentale) — CORE FUNZIONANTE
 - [x] Dedup per fingerprint: `fingerprint-batch` nel sidecar (acoustic_id = simhash
@@ -108,8 +110,12 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [x] Sidecar ricompilato (write-tags, download-key, fpcalc path); 69/69 test,
       typecheck pulito, dist rigenerato, smoke run ok
 - [ ] DEBITO: localizzazione completa dei testi di pagina (en/fr/de)
-- [ ] DEBITO: test automatico di write-tags (richiede file audio veri con tag;
-      oggi coperto dal rollback design + verifica manuale)
+- [x] Test automatico write-tags: `tests/writeTags.e2e.test.ts` (3 test) con MP3
+      minimo VALIDO generato in Python (`tests/fixtures/make_audio_fixture.py`,
+      frame MPEG reali + EasyID3). Copre: happy path (backup byte-identico al
+      pre-scrittura, tag verificati in rilettura), rollback su file non-audio
+      (contenuto intatto, hash uguale), file inesistente (errore pulito).
+      Suite: 72/72 verdi
 
 ## FASE 3 — Power user (modalità Esperto) — CORE FUNZIONANTE
 - [x] Sync Daemon "Nuovi Acquisti": fs.watch ricorsivo con debounce 2s, scansione
