@@ -14,7 +14,7 @@ import type BetterSqlite3 from 'better-sqlite3';
  *    I due percorsi non girano mai in concorrenza: Node serializza i job.
  *  - settings / jobs / oplog → SOLO Node.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -127,6 +127,29 @@ const MIGRATIONS: Record<number, string> = {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (track_id, method)
     );
+  `,
+  // Fase 3: coda "Nuovi Acquisti" del Sync Daemon (scrittore: SOLO Node).
+  // Niente iniezioni nel master.db: da qui esce solo un XML che l'utente
+  // importa a mano in Rekordbox.
+  3: `
+    CREATE TABLE IF NOT EXISTS inbox_items (
+      id INTEGER PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE,
+      title TEXT,
+      artist TEXT,
+      album TEXT,
+      genre TEXT,
+      year INTEGER,
+      bpm REAL,
+      musical_key TEXT,
+      camelot TEXT,
+      duration_s REAL,
+      filesize INTEGER,
+      has_tag_issues INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'prepared', 'dismissed')),
+      added_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(status);
   `
 };
 

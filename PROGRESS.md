@@ -78,9 +78,24 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [ ] UI waveform per i cue (ora lista editabile)
 - [ ] Verifica manuale con fpcalc/aubio installati su questa macchina
 
-## FASE 3 — Power user — NON INIZIATA
-- [ ] Headless Sync Daemon (cartella "Nuovi Acquisti" → propone import sicuro)
-- [ ] Set Planner / collisione armonica (Camelot + energia)
+## FASE 3 — Power user (modalità Esperto) — CORE FUNZIONANTE
+- [x] Sync Daemon "Nuovi Acquisti": fs.watch ricorsivo con debounce 2s, scansione
+      idempotente (skip file già in coda o in libreria), tag via music-metadata,
+      camelot+versione normalizzati, coda `inbox_items` (schema UDM v3, owner Node),
+      riavvio automatico se attivo nella sessione precedente. Onestà: attivo solo
+      ad app aperta (dichiarato in UI), niente iniezioni nel master.db — genera
+      XML con playlist "CrateForge – Nuovi Acquisti" da importare a mano
+- [x] Set Planner: analisi read-only delle transizioni (regola Camelot con anello
+      12↔1, soglia salto BPM 6%), tracce-ponte compatibili con entrambi i lati e
+      BPM intermedio. Limite dichiarato in UI: energia non nel DB, BPM come proxy
+- [x] Test: harmony (parse/compatibilità/wrap/transizioni), setPlanner
+      (playlist/clash/ponti), syncDaemon (idempotenza/corrotti/skip libreria),
+      inboxXml — 63/63 verdi, typecheck pulito
+- [x] `npm run dist` rigenerato con Fase 2+3; smoke run del pacchetto ok
+- [ ] Daemon come servizio di sistema ad app chiusa — fuori scope volutamente
+      (onestà §1: la UI dice "attivo mentre CrateForge è aperto")
+- [ ] Proposta cue automatica sugli item della coda (richiede livello AI; per ora
+      si usa Auto-Cue dopo l'import)
 
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)

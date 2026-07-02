@@ -15,6 +15,9 @@ import { REKORDBOX_XML_LIMITS } from '@adapters/common';
 import { SERATO_STATUS } from '@adapters/serato';
 import { ENGINE_STATUS } from '@adapters/engine';
 import { applyProposals, proposeTags, TagProposal } from '@services/tagger/autoTagger';
+import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDaemon';
+import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
+import { writeInboxXml } from '@adapters/rekordbox/inboxXml';
 import type { TrackRow } from '@core/udm';
 import { ThrottledProgress } from './progress';
 import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
@@ -490,6 +493,72 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     if (!t?.path) return { ok: false, message: 'Brano senza percorso file.' };
     const r = await runSidecarJob('stems', 'stems', ['--file', t.path, '--out-dir', outDir]);
     logOperation(db, 'stems.run', t.path, r.ok ? 'ok' : 'error', r.ok ? outDir : r.message);
+    return r;
+  });
+
+  // =====================================================================
+  // FASE 3 — power user (modalità Esperto)
+  // =====================================================================
+
+  // ---- Sync Daemon "Nuovi Acquisti" (§6 Fase 3.1) ----
+  // Attivo solo mentre l'app è aperta (la UI lo dichiara). Nuovi item →
+  // notifica leggera al renderer (solo il conteggio, mai bulk data).
+  const daemon = new SyncDaemon(db, undefined, (added) => {
+    win()?.webContents.send('inbox:new-items', { added });
+  });
+
+  ipcMain.handle('watcher:start', async (_e, folder: string) => {
+    const r = await daemon.start(folder);
+    setSetting(db, 'watchFolder', folder);
+    setSetting(db, 'watchEnabled', '1');
+    return r;
+  });
+  ipcMain.handle('watcher:stop', () => {
+    daemon.stop();
+    setSetting(db, 'watchEnabled', '0');
+    logOperation(db, 'watch.stop', getSetting(db, 'watchFolder'), 'ok');
+    return true;
+  });
+  ipcMain.handle('watcher:status', () => daemon.status());
+  ipcMain.handle('watcher:scan', async (_e, folder: string) => daemon.scanOnce(folder));
+
+  // Riavvio automatico del daemon se era attivo nella sessione precedente.
+  if (getSetting(db, 'watchEnabled') === '1') {
+    const saved = getSetting(db, 'watchFolder');
+    if (saved) daemon.start(saved).catch(() => setSetting(db, 'watchEnabled', '0'));
+  }
+
+  ipcMain.handle('inbox:list', (_e, status?: 'new' | 'prepared' | 'dismissed') =>
+    listInbox(db, status ?? 'new')
+  );
+  ipcMain.handle(
+    'inbox:setStatus',
+    (_e, ids: number[], status: 'new' | 'prepared' | 'dismissed') => {
+      const n = setInboxStatus(db, ids, status);
+      logOperation(db, 'inbox.status', null, 'ok', `${n} item → ${status}`);
+      return n;
+    }
+  );
+  ipcMain.handle('inbox:prepareXml', (_e, ids: number[], outPath: string) => {
+    const all = listInbox(db, 'new', 2000);
+    const chosen = all.filter((i) => ids.includes(i.id) && i.has_tag_issues === 0);
+    const r = writeInboxXml(chosen, outPath);
+    setInboxStatus(db, chosen.map((i) => i.id), 'prepared');
+    logOperation(db, 'inbox.xml', outPath, 'ok', `${r.written} nuovi brani nell'XML`);
+    return { ...r, excludedForIssues: ids.length - chosen.length };
+  });
+
+  // ---- Set Planner (§6 Fase 3.2, read-only) ----
+  ipcMain.handle('planner:playlists', () => listPlaylists(db));
+  ipcMain.handle('planner:analyze', (_e, playlistId: number) => {
+    const r = analyzePlaylist(db, playlistId);
+    logOperation(
+      db,
+      'planner.analyze',
+      String(playlistId),
+      'ok',
+      `${r.transitions.length} transizioni, ${r.problems} problematiche`
+    );
     return r;
   });
 

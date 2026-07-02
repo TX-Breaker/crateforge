@@ -35,6 +35,17 @@ dichiara i propri limiti in-app prima di eseguire.
 - **Stems (Demucs)** — separazione voce/batteria/basso in file nuovi, on-demand e
   annullabile. Operazione lunga e pesante, dichiarata come tale.
 
+## Cosa fa (Fase 3 — power user, modalità Esperto)
+
+- **Nuovi Acquisti (Sync Daemon)** — sorveglia una cartella *mentre CrateForge è
+  aperto*: i nuovi file audio vengono analizzati, normalizzati e messi in coda.
+  Quando decidi tu, generi un XML (con playlist "CrateForge – Nuovi Acquisti")
+  e lo importi a mano in Rekordbox. Nessuna iniezione automatica nel database.
+- **Set Planner** — analisi read-only di una playlist: transizioni armoniche
+  problematiche (ruota di Camelot), salti di BPM oltre il 6%, tracce-ponte
+  suggerite dalla libreria. Limite dichiarato: l'energia reale del brano non è
+  nel database, il BPM fa da proxy.
+
 ### Livello AI del sidecar (opzionale)
 
 Le funzioni Auto-Cue e Stems richiedono librerie extra, volutamente separate dal

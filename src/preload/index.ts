@@ -72,6 +72,31 @@ const api = {
   stems: {
     run: (trackId: number, outDir: string) => ipcRenderer.invoke('stems:run', trackId, outDir)
   },
+  // Fase 3 — power user (modalità Esperto)
+  watcher: {
+    start: (folder: string) => ipcRenderer.invoke('watcher:start', folder),
+    stop: () => ipcRenderer.invoke('watcher:stop'),
+    status: () => ipcRenderer.invoke('watcher:status'),
+    scan: (folder: string) => ipcRenderer.invoke('watcher:scan', folder),
+    onNewItems: (cb: (p: { added: number }) => void) => {
+      const listener = (_e: unknown, payload: { added: number }) => cb(payload);
+      ipcRenderer.on('inbox:new-items', listener);
+      return () => {
+        ipcRenderer.removeListener('inbox:new-items', listener);
+      };
+    }
+  },
+  inbox: {
+    list: (status?: 'new' | 'prepared' | 'dismissed') => ipcRenderer.invoke('inbox:list', status),
+    setStatus: (ids: number[], status: 'new' | 'prepared' | 'dismissed') =>
+      ipcRenderer.invoke('inbox:setStatus', ids, status),
+    prepareXml: (ids: number[], outPath: string) =>
+      ipcRenderer.invoke('inbox:prepareXml', ids, outPath)
+  },
+  planner: {
+    playlists: () => ipcRenderer.invoke('planner:playlists'),
+    analyze: (playlistId: number) => ipcRenderer.invoke('planner:analyze', playlistId)
+  },
   dialog: {
     openFile: (filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:openFile', filters),
