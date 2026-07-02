@@ -5,12 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, Label, Switch } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { ExcelViewer } from '@/components/ExcelViewer';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 /**
  * Generatore di Report Excel (§6 Fase 1.3). Export on-demand: il file viene
  * scritto in streaming nel main process, qui solo opzioni e avanzamento.
  */
 export function ReportPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'report', k, p);
   const [camelot, setCamelot] = useState(true);
   const [groupByArtist, setGroupByArtist] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -32,7 +36,7 @@ export function ReportPage() {
         camelotNotation: camelot,
         groupByArtist
       });
-      setOutcome(`Report creato: ${r.rows.toLocaleString('it-IT')} brani in ${r.outPath}`);
+      setOutcome(tp('outDone', { n: r.rows.toLocaleString(locale), path: r.outPath }));
       setViewPath(r.outPath);
     } catch (err) {
       setError(String(err));
@@ -44,37 +48,32 @@ export function ReportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Report Excel</h1>
-        <p className="text-sm text-muted-foreground">
-          Un file .xlsx con tutta la libreria: artista, titolo, versione, BPM, key, durata e tag
-          mancanti evidenziati in rosso.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Opzioni</CardTitle>
-          <CardDescription>
-            Il report si apre con Excel, LibreOffice o Numbers. I filtri colonna sono già attivi.
-          </CardDescription>
+          <CardTitle>{tp('optTitle')}</CardTitle>
+          <CardDescription>{tp('optDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="flex items-center justify-between text-sm">
             <span>
-              <Label>Notazione Camelot per la key</Label>
-              <p className="text-xs text-muted-foreground">Es. 8A invece di A minor</p>
+              <Label>{tp('camelotLabel')}</Label>
+              <p className="text-xs text-muted-foreground">{tp('camelotDesc')}</p>
             </span>
             <Switch checked={camelot} onCheckedChange={setCamelot} />
           </label>
           <label className="flex items-center justify-between text-sm">
             <span>
-              <Label>Raggruppa per artista</Label>
-              <p className="text-xs text-muted-foreground">Ordina il foglio per artista, poi titolo</p>
+              <Label>{tp('groupLabel')}</Label>
+              <p className="text-xs text-muted-foreground">{tp('groupDesc')}</p>
             </span>
             <Switch checked={groupByArtist} onCheckedChange={setGroupByArtist} />
           </label>
           <Button onClick={doGenerate} disabled={busy}>
-            <FileSpreadsheet /> Genera report…
+            <FileSpreadsheet /> {tp('generate')}
           </Button>
           <JobProgressBar active={busy} />
         </CardContent>
@@ -94,12 +93,9 @@ export function ReportPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Eye className="h-4 w-4" /> Anteprima report
+            <Eye className="h-4 w-4" /> {tp('previewTitle')}
           </CardTitle>
-          <CardDescription>
-            Guarda il file senza aprire Excel. Trascina il bordo destro di un'intestazione per
-            allargare la colonna: la larghezza viene ricordata (e puoi reimpostarla).
-          </CardDescription>
+          <CardDescription>{tp('previewDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button
@@ -111,7 +107,7 @@ export function ReportPage() {
               if (p) setViewPath(p);
             }}
           >
-            <FolderOpen /> Apri un report esistente…
+            <FolderOpen /> {tp('openExisting')}
           </Button>
           {viewPath && <ExcelViewer filePath={viewPath} />}
         </CardContent>

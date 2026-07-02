@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/misc';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface TrackRow {
   id: number;
@@ -19,6 +21,9 @@ const PAGE_SIZE = 50;
  * dall'UDM: mai l'intera libreria in memoria.
  */
 export function ReviewPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'review', k, p);
+  const tc = (k: string, p?: Record<string, string | number>) => pageText(locale, 'common', k, p);
   const [rows, setRows] = useState<TrackRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -41,38 +46,27 @@ export function ReviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Da revisionare</h1>
-        <p className="text-sm text-muted-foreground">
-          Brani con tag illeggibili o sospetti. Restano fuori dagli export finché non li sistemi
-          (o decidi che vanno bene così).
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>
-            {total.toLocaleString('it-IT')} brani da controllare
-          </CardTitle>
-          <CardDescription>
-            Di solito il problema è la codifica dei caratteri (nomi asiatici, arabi, cirillici) o
-            tag scritti male da altri programmi. Correggi i tag nel tuo editor preferito e
-            re-importa la libreria.
-          </CardDescription>
+          <CardTitle>{tp('countTitle', { n: total.toLocaleString(locale) })}</CardTitle>
+          <CardDescription>{tp('countDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Niente da revisionare: tutti i tag della libreria sono leggibili.
-            </p>
+            <p className="text-sm text-muted-foreground">{tp('none')}</p>
           ) : (
             <div className="overflow-auto rounded-md border">
               <table className="w-full text-left text-xs">
                 <thead className="border-b bg-muted/50 text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2">Artista</th>
-                    <th className="px-3 py-2">Titolo</th>
-                    <th className="px-3 py-2">Motivo</th>
-                    <th className="px-3 py-2">File</th>
+                    <th className="px-3 py-2">{tp('colArtist')}</th>
+                    <th className="px-3 py-2">{tp('colTitle')}</th>
+                    <th className="px-3 py-2">{tp('colReason')}</th>
+                    <th className="px-3 py-2">{tp('colFile')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -82,7 +76,7 @@ export function ReviewPage() {
                       <td className="px-3 py-1.5">{r.title ?? '—'}</td>
                       <td className="px-3 py-1.5">
                         <Badge variant="warning" className="text-[10px]">
-                          {r.review_reason ?? 'tag sospetto'}
+                          {r.review_reason ?? tp('defaultReason')}
                         </Badge>
                       </td>
                       <td className="max-w-64 truncate px-3 py-1.5 text-muted-foreground">
@@ -97,16 +91,16 @@ export function ReviewPage() {
           {total > PAGE_SIZE && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Button variant="outline" size="sm" disabled={page === 0} onClick={() => load(page - 1)}>
-                ← Precedenti
+                {tc('prev')}
               </Button>
-              Pagina {page + 1} di {Math.ceil(total / PAGE_SIZE)}
+              {tc('pageOf', { p: page + 1, tot: Math.ceil(total / PAGE_SIZE) })}
               <Button
                 variant="outline"
                 size="sm"
                 disabled={(page + 1) * PAGE_SIZE >= total}
                 onClick={() => load(page + 1)}
               >
-                Successivi →
+                {tc('next')}
               </Button>
             </div>
           )}

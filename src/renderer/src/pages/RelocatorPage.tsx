@@ -6,6 +6,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
+import type { Locale } from '@/lib/i18n';
 
 interface BrokenRow {
   trackId: number;
@@ -27,6 +30,9 @@ interface MatchSummary {
  * aggiornamento da re-importare in Rekordbox. Mai scritture nel master.db.
  */
 export function RelocatorPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) =>
+    pageText(locale, 'relocator', k, p);
   const [broken, setBroken] = useState<BrokenRow[] | null>(null);
   const [newRoot, setNewRoot] = useState('');
   const [dryRun, setDryRun] = useState<MatchSummary | null>(null);
@@ -69,11 +75,7 @@ export function RelocatorPage() {
     setError(null);
     try {
       const r = await window.crateforge.relocator.matchAndWrite(newRoot, outPath);
-      setOutcome(
-        `XML di aggiornamento scritto (${r.written} brani ritrovati) in ${outPath}. ` +
-          "Ora importalo in Rekordbox: Preferenze → Avanzate → rekordbox xml, poi 'Import to Collection'. " +
-          'Il tuo master.db non è stato toccato.'
-      );
+      setOutcome(tp('outDone', { n: r.written, path: outPath }));
       setDryRun(null);
     } catch (err) {
       setError(String(err));
@@ -85,34 +87,27 @@ export function RelocatorPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Ritrova file spostati</h1>
-        <p className="text-sm text-muted-foreground">
-          Se hai spostato la musica in un'altra cartella o disco, qui ricolleghi i brani "rotti".
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Funzione avanzata (modalità Esperto)</AlertTitle>
-        <AlertDescription>
-          Il matching avviene per nome file: se un file è stato anche rinominato, questa versione
-          non lo ritrova (il matching per impronta acustica arriva in una fase futura). Il
-          risultato è un XML da importare a mano in Rekordbox: CrateForge non scrive mai nel
-          database originale.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Trova i brani con percorso rotto</CardTitle>
-          <CardDescription>Controlla quali file della libreria non esistono più sul disco.</CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button onClick={findBroken} disabled={busy}>
-            <FileSearch /> Cerca percorsi rotti
+            <FileSearch /> {tp('findBtn')}
           </Button>
           {broken && (
             <p className="text-sm">
-              Brani con percorso rotto: <b>{broken.length.toLocaleString('it-IT')}</b>
+              {tp('brokenCount')} <b>{broken.length.toLocaleString(locale)}</b>
             </p>
           )}
           {broken && broken.length > 0 && (
@@ -122,7 +117,7 @@ export function RelocatorPage() {
                   {b.artist ?? '?'} – {b.title ?? '?'} <span className="opacity-60">({b.oldPath})</span>
                 </div>
               ))}
-              {broken.length > 200 && <div>… e altri {broken.length - 200}</div>}
+              {broken.length > 200 && <div>{tp('moreN', { n: broken.length - 200 })}</div>}
             </div>
           )}
         </CardContent>
@@ -131,11 +126,11 @@ export function RelocatorPage() {
       {broken && broken.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Dove si trovano adesso i file?</CardTitle>
+            <CardTitle>{tp('step2')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <PathField
-              label="Nuova cartella musica"
+              label={tp('fNewRoot')}
               value={newRoot}
               onBrowse={async () => {
                 const d = await window.crateforge.dialog.openDirectory();
@@ -143,20 +138,23 @@ export function RelocatorPage() {
               }}
             />
             <Button onClick={doDryRun} disabled={!newRoot || busy}>
-              Anteprima (nessun file scritto)
+              {tp('dryBtn')}
             </Button>
             {dryRun && (
               <Alert>
                 <AlertDescription>
-                  Su {dryRun.broken} brani rotti: <b>{dryRun.matched} ritrovati</b> per nome file,{' '}
-                  {dryRun.ambiguous} con più candidati (verrà usato il primo trovato),{' '}
-                  {dryRun.broken - dryRun.matched} non trovati.
+                  {tp('dryLine', {
+                    broken: dryRun.broken,
+                    matched: dryRun.matched,
+                    ambiguous: dryRun.ambiguous,
+                    missing: dryRun.broken - dryRun.matched
+                  })}
                 </AlertDescription>
               </Alert>
             )}
             {dryRun && dryRun.matched > 0 && (
               <Button onClick={doWrite} disabled={busy}>
-                <MapPin /> Genera XML di aggiornamento…
+                <MapPin /> {tp('writeBtn')}
               </Button>
             )}
           </CardContent>
@@ -164,6 +162,7 @@ export function RelocatorPage() {
       )}
 
       <FingerprintRelocator
+        locale={locale}
         newRoot={newRoot}
         setBusy={setBusy}
         setError={setError}
@@ -191,22 +190,26 @@ export function RelocatorPage() {
 
 /**
  * Relocator per fingerprint (§6 Fase 2.3): ritrova i file anche se RINOMINATI,
- * confrontando l'impronta acustica. Richiede di aver già calcolato le impronte
- * (pagina "Duplicati (impronta)") quando i file erano ancora al loro posto.
+ * confrontando l'impronta acustica. Richiede impronte già calcolate (pagina
+ * "Duplicati") quando i file erano ancora al loro posto.
  */
 function FingerprintRelocator({
+  locale,
   newRoot,
   busy,
   setBusy,
   setError,
   setOutcome
 }: {
+  locale: Locale;
   newRoot: string;
   busy: boolean;
   setBusy: (v: boolean) => void;
   setError: (v: string | null) => void;
   setOutcome: (v: string | null) => void;
 }) {
+  const tp = (k: string, p?: Record<string, string | number>) =>
+    pageText(locale, 'relocator', k, p);
   const [fpSummary, setFpSummary] = useState<{ broken: number; matched: number; scanned: number } | null>(null);
 
   const doMatch = async () => {
@@ -232,10 +235,7 @@ function FingerprintRelocator({
     setBusy(true);
     try {
       const r = await window.crateforge.relocatorFp.writeXml(outPath);
-      setOutcome(
-        `XML scritto (${r.written} brani ritrovati per impronta) in ${outPath}. ` +
-          'Importalo a mano in Rekordbox. Il master.db non è stato toccato.'
-      );
+      setOutcome(tp('outFpDone', { n: r.written, path: outPath }));
       setFpSummary(null);
     } finally {
       setBusy(false);
@@ -246,30 +246,28 @@ function FingerprintRelocator({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Fingerprint className="h-4 w-4" /> Extra · Matching per impronta acustica
-          (sperimentale)
+          <Fingerprint className="h-4 w-4" /> {tp('fpTitle')}
         </CardTitle>
-        <CardDescription>
-          Ritrova i file anche se sono stati RINOMINATI. Funziona solo per i brani di cui hai già
-          calcolato l'impronta (pagina "Duplicati") prima di spostarli; fingerprinta tutti i file
-          della nuova cartella, quindi può richiedere parecchi minuti.
-        </CardDescription>
+        <CardDescription>{tp('fpDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Button onClick={doMatch} disabled={!newRoot || busy} variant="secondary">
-          Cerca per impronta nella nuova cartella
+          {tp('fpBtn')}
         </Button>
         {fpSummary && (
           <>
             <Alert>
               <AlertDescription>
-                File scansionati: {fpSummary.scanned} — brani rotti con impronta:{' '}
-                {fpSummary.broken} — <b>ritrovati: {fpSummary.matched}</b>.
+                {tp('fpLine', {
+                  scanned: fpSummary.scanned,
+                  broken: fpSummary.broken,
+                  matched: fpSummary.matched
+                })}
               </AlertDescription>
             </Alert>
             {fpSummary.matched > 0 && (
               <Button onClick={doWrite} disabled={busy}>
-                <MapPin /> Genera XML di aggiornamento…
+                <MapPin /> {tp('writeBtn')}
               </Button>
             )}
           </>
