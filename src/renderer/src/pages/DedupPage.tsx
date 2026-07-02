@@ -8,6 +8,8 @@ import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 import { formatBytes } from '@/lib/utils';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface DupTrack {
   id: number;
@@ -30,6 +32,8 @@ interface DupGroup {
  * I duplicati selezionati vanno in QUARANTENA (reversibile), mai eliminati.
  */
 export function DedupPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'dedup', k, p);
   const [groups, setGroups] = useState<DupGroup[] | null>(null);
   const [stats, setStats] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -60,7 +64,7 @@ export function DedupPage() {
         setGroups(r.groups);
         const s = r.stats as { fingerprinted?: number; failed?: number; skippedMissing?: number };
         setStats(
-          `Impronte calcolate: ${s.fingerprinted ?? 0} (fallite: ${s.failed ?? 0}, file mancanti: ${s.skippedMissing ?? 0}).`
+          tp('stats', { done: s.fingerprinted ?? 0, failed: s.failed ?? 0, missing: s.skippedMissing ?? 0 })
         );
       }
     } catch (err) {
@@ -84,11 +88,7 @@ export function DedupPage() {
     try {
       const files = [...selected];
       const r = await window.crateforge.orphans.quarantine(files, quarantineDir, false);
-      setOutcome(
-        `Spostati in quarantena ${r.moved} duplicati (cartella: ${r.quarantineDir}). ` +
-          'Ricorda: la libreria Rekordbox punta ancora ai vecchi path; dopo la pulizia ' +
-          "usa 'Ritrova file spostati' o sistema la collection."
-      );
+      setOutcome(tp('outMoved', { n: r.moved, dir: r.quarantineDir }));
       setSelected(new Set());
     } catch (err) {
       setError(String(err));
@@ -100,32 +100,23 @@ export function DedupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Duplicati per impronta acustica</h1>
-        <p className="text-sm text-muted-foreground">
-          Trova i doppioni veri — stesso audio, anche con nome file diverso.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Funzione sperimentale (modalità Esperto)</AlertTitle>
-        <AlertDescription>
-          L'impronta acustica (Chromaprint, inclusa in CrateForge: niente da installare)
-          riconosce lo stesso audio con encoding diversi nella maggior parte dei casi, ma non è
-          infallibile: controlla sempre i gruppi prima di agire. Richiede una scansione completa
-          dei file: su librerie grandi può durare parecchi minuti.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Calcola le impronte e trova i duplicati</CardTitle>
-          <CardDescription>
-            L'Acoustic ID compare anche come colonna nel Report Excel.
-          </CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button onClick={doRun} disabled={busy}>
-            <Fingerprint /> Avvia analisi
+            <Fingerprint /> {tp('runBtn')}
           </Button>
           <JobProgressBar active={busy} />
           {stats && <p className="text-xs text-muted-foreground">{stats}</p>}
@@ -135,16 +126,12 @@ export function DedupPage() {
       {groups && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Gruppi di duplicati: {groups.length}</CardTitle>
-            <CardDescription>
-              Spunta le copie da mettere in quarantena (tieni almeno un file per gruppo!).
-            </CardDescription>
+            <CardTitle>{tp('step2', { n: groups.length })}</CardTitle>
+            <CardDescription>{tp('step2Desc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nessun duplicato acustico trovato. Libreria pulita.
-              </p>
+              <p className="text-sm text-muted-foreground">{tp('none')}</p>
             ) : (
               <>
                 <div className="max-h-96 space-y-3 overflow-auto">
@@ -165,7 +152,7 @@ export function DedupPage() {
                           />
                           <span className="flex-1 truncate">
                             {t.artist ?? '?'} – {t.title ?? '?'}{' '}
-                            <span className="text-muted-foreground">({t.path ?? 'senza file'})</span>
+                            <span className="text-muted-foreground">({t.path ?? tp('noFile')})</span>
                           </span>
                           <span className="shrink-0 text-muted-foreground">
                             {t.filesize !== null ? formatBytes(t.filesize) : ''}
@@ -177,7 +164,7 @@ export function DedupPage() {
                 </div>
                 <div className="space-y-3 border-t pt-3">
                   <PathField
-                    label="Cartella di quarantena"
+                    label={tp('fQuarantine')}
                     value={quarantineDir}
                     onBrowse={async () => {
                       const d = await window.crateforge.dialog.openDirectory();
@@ -189,7 +176,7 @@ export function DedupPage() {
                     disabled={selected.size === 0 || !quarantineDir || busy}
                     onClick={() => setConfirmOpen(true)}
                   >
-                    <CopyX /> Sposta in quarantena ({selected.size}, {formatBytes(selectedBytes)})
+                    <CopyX /> {tp('moveBtn', { n: selected.size, size: formatBytes(selectedBytes) })}
                   </Button>
                 </div>
               </>
@@ -215,18 +202,15 @@ export function DedupPage() {
       <DangerConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Mettere i duplicati in quarantena?"
+        title={tp('qTitle')}
         confirmWord="SPOSTA"
-        confirmLabel={`Sposta ${selected.size} file`}
+        confirmLabel={tp('qLabel', { n: selected.size })}
         onConfirm={doQuarantine}
         description={
           <>
-            <p>
-              {selected.size.toLocaleString('it-IT')} file ({formatBytes(selectedBytes)}) verranno
-              spostati (non eliminati) in:
-            </p>
+            <p>{tp('qBody1', { n: selected.size.toLocaleString(locale), size: formatBytes(selectedBytes) })}</p>
             <p className="font-mono text-xs">{quarantineDir}</p>
-            <p>Verifica di aver lasciato almeno una copia per ogni gruppo.</p>
+            <p>{tp('qBody2')}</p>
           </>
         }
       />

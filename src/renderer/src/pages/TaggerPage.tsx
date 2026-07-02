@@ -6,6 +6,8 @@ import { Alert, AlertDescription, AlertTitle, Checkbox, Label } from '@/componen
 import { DangerConfirmDialog } from '@/components/DangerConfirmDialog';
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice, type SaveTarget } from '@/components/SaveTargetNotice';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface Proposal {
   trackId: number;
@@ -27,6 +29,8 @@ type Provider = 'musicbrainz' | 'discogs';
  *    backup verificato e rollback automatico.
  */
 export function TaggerPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'tagger', k, p);
   const [provider, setProvider] = useState<Provider>('musicbrainz');
   const [hasDiscogsToken, setHasDiscogsToken] = useState(false);
   const [directWrites, setDirectWrites] = useState(false);
@@ -56,9 +60,11 @@ export function TaggerPage() {
         setProposals(r.proposals);
         setChecked(new Set(r.proposals.map((_: Proposal, i: number) => i)));
         setSummary(
-          `Interrogati ${r.queried} brani via ${provider === 'discogs' ? 'Discogs' : 'MusicBrainz'} ` +
-            `(max 50 per giro, ~1 al secondo per rispettare i limiti del servizio); ` +
-            `${r.skipped} senza match affidabile.`
+          tp('summary', {
+            n: r.queried,
+            prov: provider === 'discogs' ? 'Discogs' : 'MusicBrainz',
+            skipped: r.skipped
+          })
         );
       }
     } catch (err) {
@@ -72,12 +78,7 @@ export function TaggerPage() {
 
   const doApplyUdm = async () => {
     const r = await window.crateforge.tagger.apply(chosen(), 'udm');
-    setOutcome({
-      text:
-        `${r.applied} campi aggiornati nel database di CrateForge. I tuoi file audio NON sono ` +
-        'stati toccati: per portare i tag in Rekordbox usa Converti libreria → Rekordbox XML.',
-      target: 'udm'
-    });
+    setOutcome({ text: tp('outUdm', { n: r.applied }), target: 'udm' });
     setProposals(null);
   };
 
@@ -90,10 +91,7 @@ export function TaggerPage() {
         setError(r.message ?? 'Scrittura non riuscita.');
       } else {
         setOutcome({
-          text:
-            `Tag scritti su ${r.written} file ORIGINALI (falliti: ${r.failed ?? 0}). ` +
-            `Backup verificato di ogni file in: ${r.backupDir}. ` +
-            'Anche il database interno è stato aggiornato.',
+          text: tp('outOrig', { n: r.written, failed: r.failed ?? 0, dir: r.backupDir }),
           target: 'original'
         });
         setProposals(null);
@@ -106,35 +104,30 @@ export function TaggerPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Auto-Tagger</h1>
-        <p className="text-sm text-muted-foreground">
-          Completa anno e genere mancanti interrogando servizi pubblici (solo testo, mai audio).
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Funzione sperimentale (modalità Esperto)</AlertTitle>
-        <AlertDescription>
-          Serve una connessione internet. Vengono inviati SOLO artista e titolo come testo — mai
-          file audio, mai dati personali. Controlla sempre le proposte prima di applicare.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Cerca metadati mancanti</CardTitle>
-          <CardDescription>Brani con artista+titolo ma senza anno o genere.</CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Provider</Label>
+            <Label>{tp('provLabel')}</Label>
             <div className="flex gap-2">
               <Button
                 variant={provider === 'musicbrainz' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setProvider('musicbrainz')}
               >
-                MusicBrainz (senza account)
+                {tp('provMb')}
               </Button>
               <Button
                 variant={provider === 'discogs' ? 'default' : 'outline'}
@@ -142,17 +135,13 @@ export function TaggerPage() {
                 disabled={!hasDiscogsToken}
                 onClick={() => setProvider('discogs')}
               >
-                Discogs {hasDiscogsToken ? '' : '(serve token in Impostazioni)'}
+                {tp('provDiscogs')} {hasDiscogsToken ? '' : tp('provNoToken')}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              MusicBrainz: gratuito, nessun account, generi da tag della community. Discogs: generi
-              più precisi per la musica da club (es. "Tech House"), richiede un token personale
-              gratuito.
-            </p>
+            <p className="text-xs text-muted-foreground">{tp('provDesc')}</p>
           </div>
           <Button onClick={doPropose} disabled={busy}>
-            <Globe /> Interroga {provider === 'discogs' ? 'Discogs' : 'MusicBrainz'} (max 50 brani)
+            <Globe /> {tp('queryBtn', { prov: provider === 'discogs' ? 'Discogs' : 'MusicBrainz' })}
           </Button>
           <JobProgressBar active={busy} />
           {summary && <p className="text-xs text-muted-foreground">{summary}</p>}
@@ -162,13 +151,11 @@ export function TaggerPage() {
       {proposals && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Rivedi le proposte ({proposals.length})</CardTitle>
+            <CardTitle>{tp('step2', { n: proposals.length })}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {proposals.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nessuna proposta affidabile per questo giro.
-              </p>
+              <p className="text-sm text-muted-foreground">{tp('none')}</p>
             ) : (
               <>
                 <div className="max-h-80 overflow-auto rounded-md border">
@@ -192,7 +179,7 @@ export function TaggerPage() {
                         {p.artist} – {p.title}
                       </span>
                       <span className="shrink-0">
-                        {p.field === 'year' ? 'Anno' : 'Genere'}: <b>{p.proposed}</b>
+                        {p.field === 'year' ? tp('fieldYear') : tp('fieldGenre')}: <b>{p.proposed}</b>
                       </span>
                       <span className="shrink-0 text-muted-foreground">{p.source}</span>
                     </label>
@@ -200,7 +187,7 @@ export function TaggerPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button onClick={doApplyUdm} disabled={checked.size === 0 || busy}>
-                    <CheckCheck /> Applica {checked.size} al database (sicuro)
+                    <CheckCheck /> {tp('applyUdm', { n: checked.size })}
                   </Button>
                   {directWrites && (
                     <Button
@@ -208,15 +195,12 @@ export function TaggerPage() {
                       onClick={() => setConfirmOriginal(true)}
                       disabled={checked.size === 0 || busy}
                     >
-                      Scrivi {checked.size} nei FILE ORIGINALI
+                      {tp('applyOrig', { n: checked.size })}
                     </Button>
                   )}
                 </div>
                 {!directWrites && (
-                  <p className="text-xs text-muted-foreground">
-                    Vuoi scrivere i tag direttamente nei file audio? Attiva le "scritture dirette"
-                    in Impostazioni → Esperto (con backup e rollback automatici).
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tp('directHint')}</p>
                 )}
               </>
             )}
@@ -241,20 +225,14 @@ export function TaggerPage() {
       <DangerConfirmDialog
         open={confirmOriginal}
         onOpenChange={setConfirmOriginal}
-        title="Scrivere i tag nei file originali?"
+        title={tp('dlgTitle')}
         confirmWord="SCRIVI"
-        confirmLabel={`Scrivi ${checked.size} proposte sugli originali`}
+        confirmLabel={tp('dlgLabel', { n: checked.size })}
         onConfirm={doApplyOriginal}
         description={
           <>
-            <p>
-              I tag verranno scritti dentro <b>i tuoi file audio originali</b> (
-              {chosen().length} campi). Prima di ogni scrittura viene creato un backup del file
-              verificato con hash; in caso di errore il file viene ripristinato automaticamente.
-            </p>
-            <p>
-              Nota: alcuni programmi DJ rileggono i tag solo dopo una nuova analisi del brano.
-            </p>
+            <p>{tp('dlgBody1', { n: chosen().length })}</p>
+            <p>{tp('dlgBody2')}</p>
           </>
         }
       />

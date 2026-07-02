@@ -6,6 +6,8 @@ import { Alert, AlertDescription, AlertTitle, Input } from '@/components/ui/misc
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface TrackRow {
   id: number;
@@ -19,6 +21,8 @@ interface TrackRow {
  * l'audio originale non viene toccato.
  */
 export function StemsPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'stems', k, p);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<TrackRow[]>([]);
   const [track, setTrack] = useState<TrackRow | null>(null);
@@ -39,11 +43,8 @@ export function StemsPage() {
     setOutcome(null);
     try {
       const r = await window.crateforge.stems.run(track.id, outDir);
-      if (!r.ok) setError(r.message ?? 'Separazione non riuscita.');
-      else
-        setOutcome(
-          `Stem creati in ${outDir}. L'originale non è stato toccato; gli stem sono file nuovi.`
-        );
+      if (!r.ok) setError(r.message ?? tp('errDefault'));
+      else setOutcome(tp('outDone', { dir: outDir }));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -54,37 +55,30 @@ export function StemsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stems (Demucs)</h1>
-        <p className="text-sm text-muted-foreground">
-          Separa voce, batteria, basso e altro in file distinti.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Operazione lunga e pesante (modalità Esperto)</AlertTitle>
-        <AlertDescription>
-          La separazione usa <b>Demucs</b> (modello AI di Meta) e gira <b>interamente sul tuo
-          computer</b>: nessun file viene caricato su internet. Richiede il livello AI del sidecar
-          (vedi <code>requirements-ai.txt</code>). Su un portatile senza GPU un brano può
-          richiedere diversi minuti e usare molta CPU/RAM. Puoi annullare in qualsiasi momento.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>Scegli brano e cartella di destinazione</CardTitle>
-          <CardDescription>Gli stem sono file nuovi: nessuna modifica all'originale.</CardDescription>
+          <CardTitle>{tp('cardTitle')}</CardTitle>
+          <CardDescription>{tp('cardDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cerca per titolo o artista…"
+              placeholder={tp('searchPh')}
               onKeyDown={(e) => e.key === 'Enter' && doSearch()}
             />
             <Button variant="outline" onClick={doSearch}>
-              <Search /> Cerca
+              <Search /> {tp('searchBtn')}
             </Button>
           </div>
           {results.length > 0 && (
@@ -103,7 +97,7 @@ export function StemsPage() {
             </div>
           )}
           <PathField
-            label="Cartella di destinazione stem"
+            label={tp('fOutDir')}
             value={outDir}
             onBrowse={async () => {
               const d = await window.crateforge.dialog.openDirectory();
@@ -112,11 +106,11 @@ export function StemsPage() {
           />
           <div className="flex gap-2">
             <Button onClick={doRun} disabled={!track || !outDir || busy}>
-              <AudioLines /> Separa stem{track ? ` di "${track.title ?? '?'}"` : ''}
+              <AudioLines /> {tp('runBtn')}{track ? ` — "${track.title ?? '?'}"` : ''}
             </Button>
             {busy && (
               <Button variant="outline" onClick={() => window.crateforge.jobs.cancel()}>
-                <XCircle /> Annulla
+                <XCircle /> {tp('cancelBtn')}
               </Button>
             )}
           </div>

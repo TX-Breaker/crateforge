@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Checkbox, Switch } from '@/components/ui/misc';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface InboxItem {
   id: number;
@@ -24,6 +26,8 @@ interface InboxItem {
  * in Rekordbox — prepara un XML che l'utente importa a mano.
  */
 export function InboxPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'inbox', k, p);
   const [folder, setFolder] = useState('');
   const [running, setRunning] = useState(false);
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -53,14 +57,14 @@ export function InboxPage() {
     try {
       if (on) {
         if (!folder) {
-          setError('Scegli prima la cartella da sorvegliare.');
+          setError(tp('needFolder'));
           return;
         }
         const r = await window.crateforge.watcher.start(folder);
-        setMessage(`Sorveglianza attiva. Primo giro: ${r.added} nuovi file trovati.`);
+        setMessage(tp('startLine', { n: r.added }));
       } else {
         await window.crateforge.watcher.stop();
-        setMessage('Sorveglianza fermata.');
+        setMessage(tp('stopLine'));
       }
       await refresh();
     } catch (err) {
@@ -79,11 +83,10 @@ export function InboxPage() {
     try {
       const r = await window.crateforge.inbox.prepareXml([...selected], outPath);
       setMessage(
-        `XML pronto con ${r.written} brani (playlist "CrateForge – Nuovi Acquisti"). ` +
-          (r.excludedForIssues > 0
-            ? `${r.excludedForIssues} esclusi per tag illeggibili. `
-            : '') +
-          'In Rekordbox: File → Import → Import Collection, poi trascina la playlist.'
+        tp('outPrepared', {
+          n: r.written,
+          excluded: r.excludedForIssues > 0 ? tp('outExcluded', { n: r.excludedForIssues }) : ''
+        })
       );
       await refresh();
     } catch (err) {
@@ -95,36 +98,29 @@ export function InboxPage() {
 
   const doDismiss = async () => {
     await window.crateforge.inbox.setStatus([...selected], 'dismissed');
-    setMessage(`${selected.size} elementi scartati dalla coda (i file restano dove sono).`);
+    setMessage(tp('outDismissed', { n: selected.size }));
     await refresh();
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nuovi Acquisti</h1>
-        <p className="text-sm text-muted-foreground">
-          Sorveglia una cartella e prepara i nuovi brani per l'import in Rekordbox.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Come funziona (e cosa NON fa)</AlertTitle>
-        <AlertDescription>
-          La sorveglianza è attiva solo mentre CrateForge è aperto. I nuovi file vengono
-          analizzati e messi in questa coda: nulla viene aggiunto a Rekordbox da solo. Quando
-          decidi tu, generi un XML e lo importi a mano — il database di Rekordbox non viene mai
-          toccato.
-        </AlertDescription>
+        <AlertTitle>{tp('howTitle')}</AlertTitle>
+        <AlertDescription>{tp('howBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>Cartella sorvegliata</CardTitle>
+          <CardTitle>{tp('folderTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <PathField
-            label="Cartella 'Nuovi Acquisti'"
+            label={tp('fFolder')}
             value={folder}
             onBrowse={async () => {
               const d = await window.crateforge.dialog.openDirectory();
@@ -133,7 +129,7 @@ export function InboxPage() {
           />
           <div className="flex items-center gap-3">
             <Switch checked={running} onCheckedChange={toggleDaemon} disabled={busy || (!folder && !running)} />
-            <span className="text-sm">{running ? 'Sorveglianza attiva' : 'Sorveglianza spenta'}</span>
+            <span className="text-sm">{running ? tp('running') : tp('stopped')}</span>
             <Button
               variant="outline"
               size="sm"
@@ -142,14 +138,14 @@ export function InboxPage() {
                 setBusy(true);
                 try {
                   const r = await window.crateforge.watcher.scan(folder);
-                  setMessage(`Scansione: ${r.scanned} file visti, ${r.added} nuovi in coda.`);
+                  setMessage(tp('scanLine', { scanned: r.scanned, added: r.added }));
                   await refresh();
                 } finally {
                   setBusy(false);
                 }
               }}
             >
-              <RefreshCw /> Scansiona ora
+              <RefreshCw /> {tp('scanNow')}
             </Button>
           </div>
         </CardContent>
@@ -157,17 +153,12 @@ export function InboxPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>In coda: {items.length}</CardTitle>
-          <CardDescription>
-            I brani con tag illeggibili sono esclusi dall'XML (vista "Da revisionare" dopo
-            l'import della libreria).
-          </CardDescription>
+          <CardTitle>{tp('queueTitle', { n: items.length })}</CardTitle>
+          <CardDescription>{tp('queueDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nessun nuovo brano in coda. Compra qualcosa! 🎧
-            </p>
+            <p className="text-sm text-muted-foreground">{tp('empty')}</p>
           ) : (
             <>
               <div className="max-h-80 overflow-auto rounded-md border">
@@ -203,10 +194,10 @@ export function InboxPage() {
               </div>
               <div className="flex gap-2">
                 <Button onClick={doPrepare} disabled={selected.size === 0 || busy}>
-                  <PackageOpen /> Prepara XML import ({selected.size})
+                  <PackageOpen /> {tp('prepareBtn', { n: selected.size })}
                 </Button>
                 <Button variant="outline" onClick={doDismiss} disabled={selected.size === 0 || busy}>
-                  <FileX2 /> Scarta dalla coda
+                  <FileX2 /> {tp('dismissBtn')}
                 </Button>
               </div>
             </>
