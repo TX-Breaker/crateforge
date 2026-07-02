@@ -633,12 +633,24 @@ def cmd_analyze_cues(args: argparse.Namespace) -> None:
                 break
     add("Outro", max(0.0, duration - 32.0), "#e2a014")
 
+    # Envelope normalizzata per la waveform UI: max 480 bucket (pochi KB,
+    # coerente con "mai bulk data su IPC" — non sono campioni audio).
+    envelope: list[float] = []
+    if profile and peak > 0:
+        n = min(480, len(profile))
+        step = len(profile) / n
+        for i in range(n):
+            lo = int(i * step)
+            hi = max(lo + 1, int((i + 1) * step))
+            envelope.append(round(max(profile[lo:hi]) / peak, 3))
+
     emit({
         "type": "done",
         "data": {
             "durationS": round(duration, 2),
             "bpm": round(bpm, 2) if bpm else None,
             "cues": cues,
+            "envelope": envelope,
             "backend": "aubio-energy",
         },
     })

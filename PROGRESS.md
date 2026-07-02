@@ -77,7 +77,12 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (49/49 verdi, typecheck pulito)
 - [ ] Scrittura ID3 su copia con rollback verificato (Serato) — rinviata a Fase 3
       (richiede serato-connect + safeguard dedicati)
-- [ ] UI waveform per i cue (ora lista editabile)
+- [x] UI waveform per i cue: il sidecar emette `envelope` RMS normalizzata
+      (max 480 bucket, pochi KB — non campioni audio) da `analyze-cues`;
+      `Waveform.tsx` la disegna in SVG con marker colorati trascinabili
+      (drag → aggiorna positionMs), fallback automatico alla sola lista se
+      l'envelope manca. Onestà in UI: nessun ascolto, verifica in Rekordbox.
+      Sidecar ricompilato con la modifica
 - [ ] Verifica manuale con fpcalc/aubio installati su questa macchina
 
 ## FASE INTERMEDIA (post-F3, richieste utente 02/07/2026) — COMPLETATA
@@ -109,7 +114,11 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [x] Bug visivo Alert (titolo sovrapposto all'icona): `[&>svg~*]:pl-7`
 - [x] Sidecar ricompilato (write-tags, download-key, fpcalc path); 69/69 test,
       typecheck pulito, dist rigenerato, smoke run ok
-- [ ] DEBITO: localizzazione completa dei testi di pagina (en/fr/de)
+- [ ] DEBITO: localizzazione completa dei testi di pagina (en/fr/de) — AVVIATA:
+      pattern pronto in `lib/i18nPages.ts` (namespace per pagina, fallback it,
+      4 lingue) con Dashboard migrata come pilota. Le altre pagine si migrano
+      meccanicamente: aggiungi il namespace al dizionario, sostituisci le
+      stringhe con `tp('chiave')` come in Dashboard.tsx
 - [x] Test automatico write-tags: `tests/writeTags.e2e.test.ts` (3 test) con MP3
       minimo VALIDO generato in Python (`tests/fixtures/make_audio_fixture.py`,
       frame MPEG reali + EasyID3). Copre: happy path (backup byte-identico al

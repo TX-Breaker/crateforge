@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface Stats {
   tracks: number;
@@ -18,6 +20,8 @@ interface Stats {
  *  2) modalità solo-XML (sempre disponibile, pure-Node).
  */
 export function Dashboard() {
+  const { locale } = useAppState();
+  const tp = (key: string) => pageText(locale, 'dashboard', key);
   const [stats, setStats] = useState<Stats | null>(null);
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,47 +80,36 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Panoramica</h1>
-        <p className="text-sm text-muted-foreground">
-          CrateForge è il meccanico della tua libreria: sistemi qui, poi suoni in Rekordbox.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <StatCard icon={<Music2 />} label="Brani" value={stats?.tracks ?? '—'} />
-        <StatCard icon={<FolderOpen />} label="Playlist" value={stats?.playlists ?? '—'} />
-        <StatCard icon={<FileWarning />} label="Da revisionare" value={stats?.needsReview ?? '—'} />
+        <StatCard icon={<Music2 />} label={tp('statTracks')} value={stats?.tracks ?? '—'} />
+        <StatCard icon={<FolderOpen />} label={tp('statPlaylists')} value={stats?.playlists ?? '—'} />
+        <StatCard icon={<FileWarning />} label={tp('statReview')} value={stats?.needsReview ?? '—'} />
       </div>
 
       {sidecarOk === false && (
         <Alert variant="warning">
           <FileWarning className="h-4 w-4" />
-          <AlertTitle>Modalità solo-XML attiva</AlertTitle>
-          <AlertDescription>
-            Il modulo di lettura diretta del database Rekordbox non è disponibile su questo
-            computer (su Windows capita che l'antivirus lo metta in quarantena: controlla le
-            notifiche di Windows Defender e ripristina il file, oppure aggiungi la cartella
-            dell'app alle esclusioni). Puoi comunque fare tutto esportando la collection in XML
-            da Rekordbox: <b>File → Export Collection in xml format</b>, poi importala qui sotto.
-          </AlertDescription>
+          <AlertTitle>{tp('xmlOnlyTitle')}</AlertTitle>
+          <AlertDescription>{tp('xmlOnlyBody')}</AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Importa la tua libreria</CardTitle>
-          <CardDescription>
-            La libreria viene copiata nel database interno di CrateForge. I file di Rekordbox
-            vengono aperti in sola lettura: nessuna modifica agli originali, mai.
-          </CardDescription>
+          <CardTitle>{tp('importTitle')}</CardTitle>
+          <CardDescription>{tp('importDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-3">
             <Button onClick={importXml} disabled={busy}>
-              <Import /> Importa collection XML
+              <Import /> {tp('importXmlBtn')}
             </Button>
             <Button onClick={importMasterDb} disabled={busy || sidecarOk === false} variant="secondary">
-              <Database /> Leggi master.db direttamente
+              <Database /> {tp('importDbBtn')}
             </Button>
           </div>
           <JobProgressBar active={busy} />
@@ -127,7 +120,7 @@ export function Dashboard() {
           )}
           {stats?.lastIngest && (
             <p className="text-xs text-muted-foreground">
-              Ultima importazione: {stats.lastIngest.source} ({stats.lastIngest.status}
+              {tp('lastIngest')}: {stats.lastIngest.source} ({stats.lastIngest.status}
               {stats.lastIngest.finished_at ? `, ${stats.lastIngest.finished_at}` : ''})
             </p>
           )}

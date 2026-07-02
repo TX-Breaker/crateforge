@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Checkbox, Input } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
+import { Waveform } from '@/components/Waveform';
 
 interface TrackRow {
   id: number;
@@ -25,6 +26,8 @@ interface TrackResult {
   meta: string | null;
   error: string | null;
   saved: boolean;
+  envelope: number[];
+  durationS: number | null;
 }
 
 const PAGE_SIZE = 50;
@@ -105,12 +108,30 @@ export function AutoCuePage() {
                   (r.bpm ? `, BPM stimato ${r.bpm}` : '') +
                   ` — backend: ${r.backend}`,
                 error: null,
-                saved: false
+                saved: false,
+                envelope: (r.envelope as number[] | undefined) ?? [],
+                durationS: (r.durationS as number | undefined) ?? null
               }
-            : { track: t, cues: [], meta: null, error: r.message, saved: false }
+            : {
+                track: t,
+                cues: [],
+                meta: null,
+                error: r.message,
+                saved: false,
+                envelope: [],
+                durationS: null
+              }
         );
       } catch (err) {
-        out.push({ track: t, cues: [], meta: null, error: String(err), saved: false });
+        out.push({
+          track: t,
+          cues: [],
+          meta: null,
+          error: String(err),
+          saved: false,
+          envelope: [],
+          durationS: null
+        });
       }
       setResults([...out]);
     }
@@ -323,6 +344,20 @@ export function AutoCuePage() {
                   ) : (
                     <>
                       <p className="mb-2 text-xs text-muted-foreground">{r.meta}</p>
+                      {r.envelope.length > 0 && r.durationS !== null && (
+                        <div className="mb-2 space-y-1">
+                          <Waveform
+                            envelope={r.envelope}
+                            durationS={r.durationS}
+                            cues={r.cues}
+                            onMoveCue={(ci, positionMs) => updateCue(ri, ci, { positionMs })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Trascina i marker per spostare i cue. Nessun ascolto qui: la
+                            verifica a orecchio la fai in Rekordbox dopo l'import.
+                          </p>
+                        </div>
+                      )}
                       {r.cues.map((c, ci) => (
                         <div key={ci} className="mb-1.5 flex items-center gap-2">
                           <span
