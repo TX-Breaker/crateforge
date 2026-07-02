@@ -97,6 +97,28 @@ const pages: Record<Locale, PageDict> = {
       qBody1: 'Stai per spostare {n} file ({size}) dalla cartella musica alla quarantena:',
       qBody2:
         'I file NON vengono eliminati e potrai ripristinarli. Se alcuni servono ad altri programmi, escludili prima dalla selezione.'
+    },
+    converter: {
+      title: 'Converti libreria',
+      subtitle: 'Esporta la libreria verso altri software DJ. Sempre su file nuovi: gli originali non vengono toccati.',
+      fmtRekordbox: 'Per re-import nella collection o per condividere la libreria.',
+      fmtTraktor: 'Hot cue, beatgrid e playlist per Traktor Pro.',
+      fmtVdj: 'Database XML importabile in VirtualDJ.',
+      exportBtn: 'Esporta…',
+      comingSoon: 'In arrivo',
+      seratoReason: "Export diretto verso Serato in arrivo in una versione futura. Per ora usa l'export Rekordbox XML o il report Excel.",
+      engineReason: "Export diretto verso Engine DJ in arrivo in una versione futura. Per ora usa l'export Rekordbox XML o Traktor NML.",
+      dlgTitle: 'Prima di esportare: cosa devi sapere',
+      limit1: "L'import XML aggiunge/aggiorna i brani ma NON rimuove nulla dalla collection.",
+      limit2: 'Vengono importate al massimo 8 hot cue per brano.',
+      limit3: 'I colori delle memory cue, i MyTag e le smartlist NON passano.',
+      limit4: 'I loop attivi NON passano.',
+      limit5: "L'import finale in Rekordbox è manuale: dovrai cliccare tu 'Import to Collection'.",
+      dlgNote: 'Questi sono limiti del formato, non di CrateForge: nessun tool può aggirarli.',
+      ack: "Ho letto e capito i limiti dell'export",
+      proceed: "Continua con l'export",
+      outDone: 'Export {fmt} completato: {n} brani in {path}.',
+      outRbTail: " Ora apri Rekordbox, imposta questo file in Preferenze → Avanzate → rekordbox xml, poi clicca tu 'Import to Collection': l'import finale è manuale."
     }
   },
   en: {
@@ -181,6 +203,28 @@ const pages: Record<Locale, PageDict> = {
       qBody1: 'You are about to move {n} files ({size}) from the music folder to quarantine:',
       qBody2:
         'Files are NOT deleted and can be restored. If other programs need some of them, exclude them from the selection first.'
+    },
+    converter: {
+      title: 'Convert library',
+      subtitle: 'Exports your library to other DJ software. Always into new files: originals are never touched.',
+      fmtRekordbox: 'For re-import into the collection or to share the library.',
+      fmtTraktor: 'Hot cues, beatgrid and playlists for Traktor Pro.',
+      fmtVdj: 'Database XML importable into VirtualDJ.',
+      exportBtn: 'Export…',
+      comingSoon: 'Coming soon',
+      seratoReason: 'Direct export to Serato is coming in a future version. For now use the Rekordbox XML export or the Excel report.',
+      engineReason: 'Direct export to Engine DJ is coming in a future version. For now use the Rekordbox XML export or Traktor NML.',
+      dlgTitle: 'Before you export: what you need to know',
+      limit1: 'The XML import adds/updates tracks but NEVER removes anything from the collection.',
+      limit2: 'At most 8 hot cues per track are imported.',
+      limit3: 'Memory cue colors, MyTags and smartlists do NOT carry over.',
+      limit4: 'Active loops do NOT carry over.',
+      limit5: "The final import into Rekordbox is manual: you have to click 'Import to Collection' yourself.",
+      dlgNote: 'These are limits of the format, not of CrateForge: no tool can work around them.',
+      ack: 'I have read and understood the export limits',
+      proceed: 'Continue with the export',
+      outDone: '{fmt} export complete: {n} tracks in {path}.',
+      outRbTail: " Now open Rekordbox, set this file in Preferences → Advanced → rekordbox xml, then click 'Import to Collection' yourself: the final import is manual."
     }
   },
   fr: {
@@ -265,6 +309,28 @@ const pages: Record<Locale, PageDict> = {
       qBody1: 'Vous allez déplacer {n} fichiers ({size}) du dossier musique vers la quarantaine :',
       qBody2:
         "Les fichiers ne sont PAS supprimés et pourront être restaurés. Si d'autres programmes en ont besoin, excluez-les d'abord de la sélection."
+    },
+    converter: {
+      title: 'Convertir la bibliothèque',
+      subtitle: "Exporte la bibliothèque vers d'autres logiciels DJ. Toujours dans de nouveaux fichiers : les originaux ne sont jamais touchés.",
+      fmtRekordbox: 'Pour réimporter dans la collection ou partager la bibliothèque.',
+      fmtTraktor: 'Hot cues, beatgrid et playlists pour Traktor Pro.',
+      fmtVdj: 'Base XML importable dans VirtualDJ.',
+      exportBtn: 'Exporter…',
+      comingSoon: 'Bientôt',
+      seratoReason: "L'export direct vers Serato arrivera dans une version future. Pour l'instant, utilisez l'export Rekordbox XML ou le rapport Excel.",
+      engineReason: "L'export direct vers Engine DJ arrivera dans une version future. Pour l'instant, utilisez l'export Rekordbox XML ou Traktor NML.",
+      dlgTitle: "Avant d'exporter : ce qu'il faut savoir",
+      limit1: "L'import XML ajoute/met à jour les titres mais ne retire JAMAIS rien de la collection.",
+      limit2: 'Au maximum 8 hot cues par titre sont importées.',
+      limit3: 'Les couleurs des memory cues, les MyTags et les smartlists ne passent PAS.',
+      limit4: 'Les boucles actives ne passent PAS.',
+      limit5: "L'import final dans Rekordbox est manuel : c'est vous qui cliquez sur 'Import to Collection'.",
+      dlgNote: 'Ce sont des limites du format, pas de CrateForge : aucun outil ne peut les contourner.',
+      ack: "J'ai lu et compris les limites de l'export",
+      proceed: "Continuer l'export",
+      outDone: 'Export {fmt} terminé : {n} titres dans {path}.',
+      outRbTail: " Ouvrez maintenant Rekordbox, définissez ce fichier dans Préférences → Avancées → rekordbox xml, puis cliquez vous-même sur 'Import to Collection' : l'import final est manuel."
     }
   },
   de: {
@@ -349,6 +415,28 @@ const pages: Record<Locale, PageDict> = {
       qBody1: 'Du verschiebst {n} Dateien ({size}) vom Musikordner in die Quarantäne:',
       qBody2:
         'Die Dateien werden NICHT gelöscht und können wiederhergestellt werden. Falls andere Programme einige davon brauchen, nimm sie vorher aus der Auswahl.'
+    },
+    converter: {
+      title: 'Bibliothek konvertieren',
+      subtitle: 'Exportiert die Bibliothek zu anderer DJ-Software. Immer in neue Dateien: Originale werden nie angefasst.',
+      fmtRekordbox: 'Für den Re-Import in die Collection oder zum Teilen der Bibliothek.',
+      fmtTraktor: 'Hot Cues, Beatgrid und Playlists für Traktor Pro.',
+      fmtVdj: 'In VirtualDJ importierbare Datenbank-XML.',
+      exportBtn: 'Exportieren…',
+      comingSoon: 'Bald verfügbar',
+      seratoReason: 'Direkter Export zu Serato kommt in einer künftigen Version. Nutze vorerst den Rekordbox-XML-Export oder den Excel-Bericht.',
+      engineReason: 'Direkter Export zu Engine DJ kommt in einer künftigen Version. Nutze vorerst den Rekordbox-XML-Export oder Traktor NML.',
+      dlgTitle: 'Vor dem Export: das musst du wissen',
+      limit1: 'Der XML-Import fügt Titel hinzu/aktualisiert sie, entfernt aber NIE etwas aus der Collection.',
+      limit2: 'Höchstens 8 Hot Cues pro Titel werden importiert.',
+      limit3: 'Memory-Cue-Farben, MyTags und Smartlists kommen NICHT mit.',
+      limit4: 'Aktive Loops kommen NICHT mit.',
+      limit5: "Der finale Import in Rekordbox ist manuell: du musst selbst auf 'Import to Collection' klicken.",
+      dlgNote: 'Das sind Grenzen des Formats, nicht von CrateForge: kein Tool kann sie umgehen.',
+      ack: 'Ich habe die Export-Grenzen gelesen und verstanden',
+      proceed: 'Mit dem Export fortfahren',
+      outDone: '{fmt}-Export abgeschlossen: {n} Titel in {path}.',
+      outRbTail: " Öffne jetzt Rekordbox, hinterlege diese Datei unter Einstellungen → Erweitert → rekordbox xml und klicke selbst auf 'Import to Collection': der finale Import ist manuell."
     }
   }
 };

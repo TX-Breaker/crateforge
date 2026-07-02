@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertTriangle, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,34 +13,31 @@ import {
 import { Alert, AlertDescription, Badge, Checkbox } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
+import { t } from '@/lib/i18n';
 
 type Format = 'rekordbox' | 'traktor' | 'virtualdj';
 
-interface Limits {
-  rekordboxXml: string[];
-  serato: { available: boolean; reason: string };
-  engine: { available: boolean; reason: string };
-}
-
-const FORMATS: { id: Format; title: string; desc: string; ext: string; defaultName: string }[] = [
+const FORMATS: { id: Format; title: string; descKey: string; ext: string; defaultName: string }[] = [
   {
     id: 'rekordbox',
     title: 'Rekordbox XML',
-    desc: 'Per re-import nella collection o per condividere la libreria.',
+    descKey: 'fmtRekordbox',
     ext: 'xml',
     defaultName: 'crateforge-rekordbox.xml'
   },
   {
     id: 'traktor',
     title: 'Traktor NML',
-    desc: 'Hot cue, beatgrid e playlist per Traktor Pro.',
+    descKey: 'fmtTraktor',
     ext: 'nml',
     defaultName: 'crateforge-traktor.nml'
   },
   {
     id: 'virtualdj',
     title: 'VirtualDJ XML',
-    desc: 'Database XML importabile in VirtualDJ.',
+    descKey: 'fmtVdj',
     ext: 'xml',
     defaultName: 'crateforge-virtualdj.xml'
   }
@@ -49,19 +46,18 @@ const FORMATS: { id: Format; title: string; desc: string; ext: string; defaultNa
 /**
  * Converter Anti-Lock-in (§6 Fase 1.4). Prima di OGNI export l'utente vede i
  * limiti reali del canale (§4/§7) in un dialog non ignorabile: si esporta solo
- * dopo aver spuntato la presa visione.
+ * dopo aver spuntato la presa visione. I 5 limiti sono localizzati nel
+ * dizionario pagine (fatti statici del formato); le stringhe del main restano
+ * per log e fallback.
  */
 export function ConverterPage() {
-  const [limits, setLimits] = useState<Limits | null>(null);
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'converter', k, p);
   const [pending, setPending] = useState<Format | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.crateforge.exporter.limits().then(setLimits);
-  }, []);
 
   const startExport = (fmt: Format) => {
     setAcknowledged(false);
@@ -87,10 +83,8 @@ export function ConverterPage() {
             ? await window.crateforge.exporter.traktorNml(outPath)
             : await window.crateforge.exporter.virtualdjXml(outPath);
       setOutcome(
-        `Export ${fmt.title} completato: ${r.tracks.toLocaleString('it-IT')} brani in ${outPath}. ` +
-          (fmt.id === 'rekordbox'
-            ? "Ora apri Rekordbox, imposta questo file in Preferenze → Avanzate → rekordbox xml, poi clicca tu 'Import to Collection': l'import finale è manuale."
-            : '')
+        tp('outDone', { fmt: fmt.title, n: r.tracks.toLocaleString(locale), path: outPath }) +
+          (fmt.id === 'rekordbox' ? tp('outRbTail') : '')
       );
     } catch (err) {
       setError(String(err));
@@ -102,11 +96,8 @@ export function ConverterPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Converti libreria</h1>
-        <p className="text-sm text-muted-foreground">
-          Esporta la libreria verso altri software DJ. Sempre su file nuovi: gli originali non
-          vengono toccati.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -114,11 +105,11 @@ export function ConverterPage() {
           <Card key={f.id}>
             <CardHeader>
               <CardTitle className="text-base">{f.title}</CardTitle>
-              <CardDescription>{f.desc}</CardDescription>
+              <CardDescription>{tp(f.descKey)}</CardDescription>
             </CardHeader>
             <CardContent>
               <Button onClick={() => startExport(f.id)} disabled={busy}>
-                <Download /> Esporta…
+                <Download /> {tp('exportBtn')}
               </Button>
             </CardContent>
           </Card>
@@ -129,17 +120,17 @@ export function ConverterPage() {
         <Card className="opacity-75">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              Serato <Badge variant="secondary">In arrivo</Badge>
+              Serato <Badge variant="secondary">{tp('comingSoon')}</Badge>
             </CardTitle>
-            <CardDescription>{limits?.serato.reason}</CardDescription>
+            <CardDescription>{tp('seratoReason')}</CardDescription>
           </CardHeader>
         </Card>
         <Card className="opacity-75">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              Engine DJ <Badge variant="secondary">In arrivo</Badge>
+              Engine DJ <Badge variant="secondary">{tp('comingSoon')}</Badge>
             </CardTitle>
-            <CardDescription>{limits?.engine.reason}</CardDescription>
+            <CardDescription>{tp('engineReason')}</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -163,19 +154,16 @@ export function ConverterPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-warning-foreground" /> Prima di esportare:
-              cosa devi sapere
+              <AlertTriangle className="h-5 w-5 text-warning-foreground" /> {tp('dlgTitle')}
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 pt-2">
                 <ul className="list-disc space-y-1 pl-5 text-sm">
-                  {(limits?.rekordboxXml ?? []).map((l) => (
-                    <li key={l}>{l}</li>
+                  {['limit1', 'limit2', 'limit3', 'limit4', 'limit5'].map((k) => (
+                    <li key={k}>{tp(k)}</li>
                   ))}
                 </ul>
-                <p className="text-sm">
-                  Questi sono limiti del formato, non di CrateForge: nessun tool può aggirarli.
-                </p>
+                <p className="text-sm">{tp('dlgNote')}</p>
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -184,14 +172,14 @@ export function ConverterPage() {
               checked={acknowledged}
               onCheckedChange={(v) => setAcknowledged(v === true)}
             />
-            Ho letto e capito i limiti dell'export
+            {tp('ack')}
           </label>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPending(null)}>
-              Annulla
+              {t(locale, 'common.cancel')}
             </Button>
             <Button disabled={!acknowledged} onClick={doExport}>
-              Continua con l'export
+              {tp('proceed')}
             </Button>
           </DialogFooter>
         </DialogContent>
