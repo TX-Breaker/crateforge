@@ -6,6 +6,8 @@ import { Alert, AlertDescription, AlertTitle, Checkbox, Input } from '@/componen
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { Waveform } from '@/components/Waveform';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface TrackRow {
   id: number;
@@ -44,6 +46,9 @@ function fmtMs(ms: number): string {
  * (per brano o tutti insieme). Human-in-the-loop, sempre.
  */
 export function AutoCuePage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'autocue', k, p);
+  const tc = (k: string, p?: Record<string, string | number>) => pageText(locale, 'common', k, p);
   const [source, setSource] = useState<'search' | 'playlist'>('search');
   const [search, setSearch] = useState('');
   const [playlists, setPlaylists] = useState<{ id: number; name: string; trackCount: number }[]>([]);
@@ -95,7 +100,9 @@ export function AutoCuePage() {
     for (let i = 0; i < chosen.length; i++) {
       if (cancelRef.current) break;
       const t = chosen[i];
-      setBatchNote(`Analisi ${i + 1}/${chosen.length}: ${t.artist ?? '?'} – ${t.title ?? '?'}`);
+      setBatchNote(
+        tp('analyzing', { i: i + 1, tot: chosen.length, track: `${t.artist ?? '?'} – ${t.title ?? '?'}` })
+      );
       try {
         const r = await window.crateforge.cues.analyze(t.id);
         out.push(
@@ -103,10 +110,11 @@ export function AutoCuePage() {
             ? {
                 track: t,
                 cues: r.cues as ProposedCue[],
-                meta:
-                  `Durata ${r.durationS}s` +
-                  (r.bpm ? `, BPM stimato ${r.bpm}` : '') +
-                  ` — backend: ${r.backend}`,
+                meta: tp('metaLine', {
+                  d: r.durationS,
+                  bpm: r.bpm ? tp('metaBpm', { bpm: r.bpm }) : '',
+                  backend: r.backend
+                }),
                 error: null,
                 saved: false,
                 envelope: (r.envelope as number[] | undefined) ?? [],
@@ -137,8 +145,8 @@ export function AutoCuePage() {
     }
     setBatchNote(
       cancelRef.current
-        ? `Analisi interrotta: completati ${out.length} brani su ${chosen.length}.`
-        : `Analisi completata su ${out.length} brani. Rivedi i cue e salva quelli che ti convincono.`
+        ? tp('stoppedNote', { n: out.length, tot: chosen.length })
+        : tp('doneNote', { n: out.length })
     );
     setBusy(false);
   };
@@ -173,29 +181,19 @@ export function AutoCuePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Auto-Cue assistito</h1>
-        <p className="text-sm text-muted-foreground">
-          Cue suggeriti automaticamente. Controllali sempre: nessun algoritmo sostituisce il tuo
-          orecchio.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Funzione sperimentale (modalità Esperto)</AlertTitle>
-        <AlertDescription>
-          Richiede il livello AI del sidecar (vedi README, <code>requirements-ai.txt</code>).
-          Massimo 8 hot cue per brano (limite dell'import XML di Rekordbox). Niente viene salvato
-          finché non clicchi tu; il salvataggio va nel database di CrateForge e in Rekordbox si
-          porta con l'export XML.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Scegli i brani dalla libreria</CardTitle>
-          <CardDescription>
-            Per ricerca o per playlist intera; spunta i brani da analizzare.
-          </CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
@@ -204,14 +202,14 @@ export function AutoCuePage() {
               size="sm"
               onClick={() => setSource('search')}
             >
-              <Search /> Ricerca libera
+              <Search /> {tp('srcSearch')}
             </Button>
             <Button
               variant={source === 'playlist' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setSource('playlist')}
             >
-              <ListMusic /> Da playlist
+              <ListMusic /> {tp('srcPlaylist')}
             </Button>
           </div>
 
@@ -220,19 +218,17 @@ export function AutoCuePage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cerca per titolo o artista…"
+                placeholder={tp('searchPh')}
                 onKeyDown={(e) => e.key === 'Enter' && loadTracks(0)}
               />
               <Button variant="outline" onClick={() => loadTracks(0)}>
-                Cerca
+                {tp('searchBtn')}
               </Button>
             </div>
           ) : (
             <div className="max-h-40 overflow-auto rounded-md border">
               {playlists.length === 0 ? (
-                <p className="p-3 text-xs text-muted-foreground">
-                  Nessuna playlist in libreria: importa prima la collection dalla Panoramica.
-                </p>
+                <p className="p-3 text-xs text-muted-foreground">{tp('noPlaylists')}</p>
               ) : (
                 playlists.map((p) => (
                   <button
@@ -246,7 +242,7 @@ export function AutoCuePage() {
                     }`}
                   >
                     <span className="flex-1 truncate">{p.name}</span>
-                    <span className="text-muted-foreground">{p.trackCount} brani</span>
+                    <span className="text-muted-foreground">{tp('tracksN', { n: p.trackCount })}</span>
                   </button>
                 ))
               )}
@@ -257,14 +253,12 @@ export function AutoCuePage() {
             <>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Button variant="outline" size="sm" onClick={() => setEnabled(new Set(tracks.filter((t) => t.path).map((t) => t.id)))}>
-                  Abilita tutti
+                  {tp('enableAll')}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setEnabled(new Set())}>
-                  Disabilita tutti
+                  {tp('disableAll')}
                 </Button>
-                <span>
-                  {enabled.size} abilitati su {total.toLocaleString('it-IT')} totali
-                </span>
+                <span>{tp('enabledOf', { n: enabled.size, tot: total.toLocaleString(locale) })}</span>
               </div>
               <div className="max-h-64 overflow-auto rounded-md border">
                 {tracks.map((t) => (
@@ -279,7 +273,7 @@ export function AutoCuePage() {
                     />
                     <span className="flex-1 truncate">
                       {t.artist ?? '?'} – {t.title ?? '?'}
-                      {!t.path && <span className="text-muted-foreground"> (senza file)</span>}
+                      {!t.path && <span className="text-muted-foreground"> {tp('noFile')}</span>}
                     </span>
                   </label>
                 ))}
@@ -287,26 +281,26 @@ export function AutoCuePage() {
               {total > PAGE_SIZE && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Button variant="outline" size="sm" disabled={page === 0} onClick={() => loadTracks(page - 1)}>
-                    ← Precedenti
+                    {tc('prev')}
                   </Button>
-                  Pagina {page + 1} di {Math.ceil(total / PAGE_SIZE)}
+                  {tc('pageOf', { p: page + 1, tot: Math.ceil(total / PAGE_SIZE) })}
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={(page + 1) * PAGE_SIZE >= total}
                     onClick={() => loadTracks(page + 1)}
                   >
-                    Successivi →
+                    {tc('next')}
                   </Button>
                 </div>
               )}
               <div className="flex gap-2">
                 <Button onClick={doBatch} disabled={busy || enabled.size === 0}>
-                  <Wand2 /> Analizza {enabled.size} brani
+                  <Wand2 /> {tp('analyzeBtn', { n: enabled.size })}
                 </Button>
                 {busy && (
                   <Button variant="outline" onClick={() => (cancelRef.current = true)}>
-                    <XCircle /> Ferma dopo il brano corrente
+                    <XCircle /> {tp('stopBtn')}
                   </Button>
                 )}
               </div>
@@ -320,15 +314,15 @@ export function AutoCuePage() {
       {results.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Rivedi e salva ({savedCount}/{results.length} salvati)</CardTitle>
+            <CardTitle>{tp('step2', { saved: savedCount, tot: results.length })}</CardTitle>
             <CardDescription className="flex items-center gap-2">
-              <span>Sposta i tempi, rinomina, elimina i cue che non convincono.</span>
+              <span>{tp('step2Desc')}</span>
               <SaveTargetNotice target="udm" />
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Button onClick={saveAll} disabled={busy || results.every((r) => r.saved || r.error || r.cues.length === 0)}>
-              <SaveAll /> Salva tutti i non salvati
+              <SaveAll /> {tp('saveAllBtn')}
             </Button>
             <div className="max-h-[30rem] space-y-4 overflow-auto">
               {results.map((r, ri) => (
@@ -337,7 +331,7 @@ export function AutoCuePage() {
                     <span className="flex-1 truncate font-medium">
                       {r.track.artist ?? '?'} – {r.track.title ?? '?'}
                     </span>
-                    {r.saved && <span className="text-xs text-muted-foreground">✅ salvato</span>}
+                    {r.saved && <span className="text-xs text-muted-foreground">{tp('savedMark')}</span>}
                   </div>
                   {r.error ? (
                     <p className="text-xs text-destructive">{r.error}</p>
@@ -352,10 +346,7 @@ export function AutoCuePage() {
                             cues={r.cues}
                             onMoveCue={(ci, positionMs) => updateCue(ri, ci, { positionMs })}
                           />
-                          <p className="text-[10px] text-muted-foreground">
-                            Trascina i marker per spostare i cue. Nessun ascolto qui: la
-                            verifica a orecchio la fai in Rekordbox dopo l'import.
-                          </p>
+                          <p className="text-[10px] text-muted-foreground">{tp('waveHint')}</p>
                         </div>
                       )}
                       {r.cues.map((c, ci) => (
@@ -379,13 +370,13 @@ export function AutoCuePage() {
                           />
                           <span className="text-xs text-muted-foreground">{fmtMs(c.positionMs)}</span>
                           <Button variant="ghost" size="sm" onClick={() => removeCue(ri, ci)}>
-                            Rimuovi
+                            {tp('removeBtn')}
                           </Button>
                         </div>
                       ))}
                       {!r.saved && r.cues.length > 0 && (
                         <Button size="sm" variant="outline" onClick={() => saveOne(ri)}>
-                          <Save /> Salva {r.cues.length} cue
+                          <Save /> {tp('saveOneBtn', { n: r.cues.length })}
                         </Button>
                       )}
                     </>

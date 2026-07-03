@@ -3,6 +3,8 @@ import { AlertTriangle, ArrowRight, ListMusic, Route } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
+import { useAppState } from '@/lib/appState';
+import { pageText } from '@/lib/i18nPages';
 
 interface PlannerTrack {
   id: number;
@@ -38,6 +40,8 @@ const trackLabel = (t: PlannerTrack) =>
  * una playlist: compatibilità Camelot + salti BPM, con tracce-ponte suggerite.
  */
 export function PlannerPage() {
+  const { locale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'planner', k, p);
   const [playlists, setPlaylists] = useState<{ id: number; name: string; trackCount: number }[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -60,31 +64,23 @@ export function PlannerPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Set Planner</h1>
-        <p className="text-sm text-muted-foreground">
-          Controlla le transizioni armoniche (Camelot) e i salti di BPM di una playlist.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
+        <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
 
       <Alert variant="warning">
-        <AlertTitle>Limiti dichiarati</AlertTitle>
-        <AlertDescription>
-          L'analisi usa key e BPM presenti in libreria: se mancano, la transizione risulta "dati
-          insufficienti". L'"energia" reale del brano non è nel database: il salto BPM è solo un
-          indicatore approssimativo. Solo lettura: la playlist non viene modificata.
-        </AlertDescription>
+        <AlertTitle>{tp('warnTitle')}</AlertTitle>
+        <AlertDescription>{tp('warnBody')}</AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>1 · Scegli la playlist</CardTitle>
-          <CardDescription>Solo playlist con almeno 2 brani.</CardDescription>
+          <CardTitle>{tp('step1')}</CardTitle>
+          <CardDescription>{tp('step1Desc')}</CardDescription>
         </CardHeader>
         <CardContent>
           {playlists.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nessuna playlist in libreria. Importa prima la collection (Panoramica).
-            </p>
+            <p className="text-sm text-muted-foreground">{tp('noPlaylists')}</p>
           ) : (
             <div className="max-h-48 overflow-auto rounded-md border">
               {playlists.map((p) => (
@@ -98,7 +94,7 @@ export function PlannerPage() {
                 >
                   <ListMusic className="h-3.5 w-3.5 shrink-0" />
                   <span className="flex-1 truncate">{p.name}</span>
-                  <span className="text-muted-foreground">{p.trackCount} brani</span>
+                  <span className="text-muted-foreground">{tp('tracksN', { n: p.trackCount })}</span>
                 </button>
               ))}
             </div>
@@ -110,12 +106,11 @@ export function PlannerPage() {
         <Card>
           <CardHeader>
             <CardTitle>
-              2 · Transizioni: {analysis.transitions.length} — problematiche: {analysis.problems}
+              {tp('step2', { n: analysis.transitions.length, p: analysis.problems })}
             </CardTitle>
             <CardDescription>
-              {analysis.missingData > 0 &&
-                `${analysis.missingData} transizioni con dati incompleti (key o BPM mancanti). `}
-              Suggerimenti-ponte presi dalla tua libreria.
+              {analysis.missingData > 0 && tp('missingNote', { n: analysis.missingData })}
+              {tp('bridgesNote')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -137,19 +132,19 @@ export function PlannerPage() {
                       <span className="truncate">{trackLabel(tr.to)}</span>
                     </div>
                     <div className="mt-1 text-muted-foreground">
-                      {tr.keyOk === false && <span>Tonalità incompatibili (Camelot). </span>}
+                      {tr.keyOk === false && <span>{tp('keyClash')}</span>}
                       {tr.bpmDelta !== null && tr.bpmDelta > 6 && (
-                        <span>Salto BPM {tr.bpmDelta.toFixed(1)}%. </span>
+                        <span>{tp('bpmJump', { pct: tr.bpmDelta.toFixed(1) })}</span>
                       )}
                       {tr.keyOk === true && (tr.bpmDelta === null || tr.bpmDelta <= 6) && !missing && (
-                        <span>OK.</span>
+                        <span>{tp('okLine')}</span>
                       )}
-                      {missing && <span>Dati insufficienti (key o BPM mancanti).</span>}
+                      {missing && <span>{tp('missingData')}</span>}
                     </div>
                     {tr.bridges.length > 0 && (
                       <div className="mt-1.5 border-t pt-1.5">
                         <div className="mb-0.5 flex items-center gap-1 font-medium">
-                          <Route className="h-3 w-3" /> Tracce-ponte possibili:
+                          <Route className="h-3 w-3" /> {tp('bridges')}
                         </div>
                         {tr.bridges.map((b) => (
                           <div key={b.id} className="truncate text-muted-foreground">
@@ -166,7 +161,7 @@ export function PlannerPage() {
         </Card>
       )}
 
-      {busy && <p className="text-sm text-muted-foreground">Analisi in corso…</p>}
+      {busy && <p className="text-sm text-muted-foreground">{tp('analyzing')}</p>}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Input, Label, Switch } from '@/components/ui/misc';
 import { useAppState, type Theme } from '@/lib/appState';
 import { LOCALES } from '@/lib/i18n';
+import { pageText } from '@/lib/i18nPages';
 
 /**
  * Impostazioni: tema, lingua, modalità Semplice/Esperto (§5).
@@ -12,6 +13,7 @@ import { LOCALES } from '@/lib/i18n';
  */
 export function SettingsPage() {
   const { theme, setTheme, mode, setMode, locale, setLocale } = useAppState();
+  const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'settings', k, p);
   const [sidecar, setSidecar] = useState<{ available: boolean; binaryPath?: string } | null>(null);
   const [directWrites, setDirectWrites] = useState(false);
   const [discogsToken, setDiscogsToken] = useState('');
@@ -34,35 +36,31 @@ export function SettingsPage() {
     setKeyMsg(null);
     try {
       const r = await window.crateforge.sidecar.downloadKey();
-      setKeyMsg(
-        r.ok
-          ? 'Chiave scaricata e salvata: la lettura diretta del master.db ora dovrebbe funzionare (riprova l\'importazione dalla Panoramica).'
-          : `Non riuscito: ${r.message}`
-      );
+      setKeyMsg(r.ok ? tp('keyOk') : tp('keyFail', { msg: r.message ?? '?' }));
     } finally {
       setKeyBusy(false);
     }
   };
 
   const themes: { id: Theme; label: string; icon: React.ReactNode }[] = [
-    { id: 'light', label: 'Chiaro', icon: <Sun /> },
-    { id: 'dark', label: 'Scuro', icon: <Moon /> },
-    { id: 'system', label: 'Automatico', icon: <SunMoon /> }
+    { id: 'light', label: tp('themeLight'), icon: <Sun /> },
+    { id: 'dark', label: tp('themeDark'), icon: <Moon /> },
+    { id: 'system', label: tp('themeAuto'), icon: <SunMoon /> }
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Impostazioni</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Aspetto</CardTitle>
+          <CardTitle>{tp('appearance')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Tema</Label>
+            <Label>{tp('themeLabel')}</Label>
             <div className="flex gap-2">
               {themes.map((t) => (
                 <Button
@@ -77,7 +75,7 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Lingua / Language</Label>
+            <Label>{tp('langLabel')}</Label>
             <div className="flex gap-2">
               {LOCALES.map((l) => (
                 <Button
@@ -96,19 +94,14 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Modalità utente</CardTitle>
-          <CardDescription>
-            In modalità Semplice vedi solo le operazioni sicure e guidate. La modalità Esperto
-            sblocca le funzioni avanzate.
-          </CardDescription>
+          <CardTitle>{tp('modeTitle')}</CardTitle>
+          <CardDescription>{tp('modeDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <label className="flex items-center justify-between text-sm">
             <span>
-              <Label>Modalità Esperto</Label>
-              <p className="text-xs text-muted-foreground">
-                Sblocca: relocator, lettura diretta master.db, opzioni avanzate future
-              </p>
+              <Label>{tp('expertLabel')}</Label>
+              <p className="text-xs text-muted-foreground">{tp('expertDesc')}</p>
             </span>
             <Switch
               checked={mode === 'expert'}
@@ -117,49 +110,32 @@ export function SettingsPage() {
           </label>
           {mode === 'expert' && (
             <Alert variant="warning">
-              <AlertTitle>Sei in modalità Esperto</AlertTitle>
-              <AlertDescription>
-                Le funzioni avanzate lavorano di default su copie e database interno. Le scritture
-                sui file originali restano SPENTE finché non le attivi qui sotto, e ogni singola
-                operazione richiede comunque doppia conferma.
-              </AlertDescription>
+              <AlertTitle>{tp('expertOnTitle')}</AlertTitle>
+              <AlertDescription>{tp('expertOnBody')}</AlertDescription>
             </Alert>
           )}
           {mode === 'expert' && (
             <>
               <label className="flex items-center justify-between border-t pt-3 text-sm">
                 <span>
-                  <Label>Scritture dirette sui file originali</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Sblocca: eliminazione definitiva degli orfani, scrittura dei tag ID3 sui file
-                    audio originali (con backup verificato e rollback automatico)
-                  </p>
+                  <Label>{tp('directLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">{tp('directDesc')}</p>
                 </span>
                 <Switch checked={directWrites} onCheckedChange={toggleDirectWrites} />
               </label>
               {directWrites && (
                 <Alert variant="destructive">
-                  <AlertTitle>Scritture dirette ATTIVE</AlertTitle>
-                  <AlertDescription>
-                    CrateForge ora può modificare o eliminare i tuoi file originali dove lo
-                    chiedi esplicitamente. Ogni operazione fa prima un backup verificato con hash
-                    e fa rollback automatico in caso di anomalia — ma un'eliminazione definitiva
-                    resta definitiva. Il database di Rekordbox (master.db) NON viene comunque mai
-                    scritto: è cifrato e con schema non documentato, un errore lì significa
-                    perdere la libreria. Verso Rekordbox si passa sempre dall'XML.
-                  </AlertDescription>
+                  <AlertTitle>{tp('directOnTitle')}</AlertTitle>
+                  <AlertDescription>{tp('directOnBody')}</AlertDescription>
                 </Alert>
               )}
               <div className="space-y-1.5 border-t pt-3">
-                <Label>Token Discogs (Auto-Tagger, opzionale)</Label>
-                <p className="text-xs text-muted-foreground">
-                  Token personale gratuito da discogs.com → Settings → Developers. Serve solo se
-                  scegli Discogs come provider nell'Auto-Tagger.
-                </p>
+                <Label>{tp('discogsLabel')}</Label>
+                <p className="text-xs text-muted-foreground">{tp('discogsDesc')}</p>
                 <Input
                   type="password"
                   value={discogsToken}
-                  placeholder="Il tuo token Discogs"
+                  placeholder={tp('discogsPh')}
                   onChange={(e) => {
                     setDiscogsToken(e.target.value);
                     window.crateforge.settings.set('discogsToken', e.target.value);
@@ -173,31 +149,24 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Modulo di lettura diretta (sidecar)</CardTitle>
-          <CardDescription>
-            Componente che legge il database Rekordbox senza passare dall'export XML.
-          </CardDescription>
+          <CardTitle>{tp('sidecarTitle')}</CardTitle>
+          <CardDescription>{tp('sidecarDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           {sidecar === null ? (
-            <p className="text-sm text-muted-foreground">Verifica in corso…</p>
+            <p className="text-sm text-muted-foreground">{tp('checking')}</p>
           ) : sidecar.available ? (
             <div className="space-y-3">
               <p className="text-sm">
-                ✅ Disponibile{' '}
+                {tp('available')}{' '}
                 <span className="font-mono text-xs text-muted-foreground">{sidecar.binaryPath}</span>
               </p>
               {mode === 'expert' && (
                 <div className="space-y-2 border-t pt-3">
-                  <Label>La lettura del master.db fallisce? (Rekordbox ≥ 6.6.5)</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Da Rekordbox 6.6.5 la chiave di decrittazione non è più estraibile in locale.
-                    Questo pulsante la recupera dalle fonti pubbliche del progetto pyrekordbox e
-                    la salva sul tuo computer. Non viene inviato alcun tuo dato; serve solo una
-                    connessione internet.
-                  </p>
+                  <Label>{tp('keyLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">{tp('keyDesc')}</p>
                   <Button variant="outline" size="sm" onClick={doDownloadKey} disabled={keyBusy}>
-                    <KeyRound /> Scarica chiave di lettura
+                    <KeyRound /> {tp('keyBtn')}
                   </Button>
                   {keyMsg && (
                     <Alert>
@@ -209,14 +178,8 @@ export function SettingsPage() {
             </div>
           ) : (
             <Alert variant="warning">
-              <AlertTitle>Non disponibile — modalità solo-XML attiva</AlertTitle>
-              <AlertDescription>
-                Su Windows la causa tipica è l'antivirus che mette in quarantena il modulo
-                (falso positivo, comune per componenti impacchettati con PyInstaller). Apri
-                Sicurezza di Windows → Protezione da virus e minacce → Cronologia protezione,
-                ripristina il file e aggiungi la cartella di CrateForge alle esclusioni. Tutte le
-                funzioni restano usabili importando la collection XML esportata da Rekordbox.
-              </AlertDescription>
+              <AlertTitle>{tp('unavailTitle')}</AlertTitle>
+              <AlertDescription>{tp('unavailBody')}</AlertDescription>
             </Alert>
           )}
         </CardContent>
