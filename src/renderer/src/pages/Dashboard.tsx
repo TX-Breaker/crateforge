@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Database, FileWarning, FolderOpen, Import, Music2 } from 'lucide-react';
+import { BookOpen, Database, FileWarning, FolderOpen, Import, Music2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
+import { GuideDialog } from '@/components/GuideDialog';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
 
@@ -26,6 +27,7 @@ export function Dashboard() {
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'info' | 'warn' | 'error'; text: string } | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const refresh = async () => {
     setStats(await window.crateforge.library.stats());
@@ -94,7 +96,12 @@ export function Dashboard() {
         <Alert variant="warning">
           <FileWarning className="h-4 w-4" />
           <AlertTitle>{tp('xmlOnlyTitle')}</AlertTitle>
-          <AlertDescription>{tp('xmlOnlyBody')}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{tp('xmlOnlyBody')}</p>
+            <Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+              <BookOpen /> {pageText(locale, 'guide', 'openExport')}
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -104,12 +111,15 @@ export function Dashboard() {
           <CardDescription>{tp('importDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button onClick={importXml} disabled={busy}>
               <Import /> {tp('importXmlBtn')}
             </Button>
             <Button onClick={importMasterDb} disabled={busy || sidecarOk === false} variant="secondary">
               <Database /> {tp('importDbBtn')}
+            </Button>
+            <Button variant="ghost" onClick={() => setGuideOpen(true)}>
+              <BookOpen /> {pageText(locale, 'guide', 'openExport')}
             </Button>
           </div>
           <JobProgressBar active={busy} />
@@ -126,6 +136,8 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <GuideDialog kind="exportXml" open={guideOpen} onOpenChange={setGuideOpen} />
     </div>
   );
 }

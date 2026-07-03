@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Download } from 'lucide-react';
+import { AlertTriangle, BookOpen, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +13,7 @@ import {
 import { Alert, AlertDescription, Badge, Checkbox } from '@/components/ui/misc';
 import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice } from '@/components/SaveTargetNotice';
+import { GuideDialog } from '@/components/GuideDialog';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
 import { t } from '@/lib/i18n';
@@ -58,6 +59,7 @@ export function ConverterPage() {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const startExport = (fmt: Format) => {
     setAcknowledged(false);
@@ -140,10 +142,17 @@ export function ConverterPage() {
         <Alert>
           <AlertDescription className="space-y-2">
             <p>{outcome}</p>
-            <SaveTargetNotice target="xml" />
+            <div className="flex flex-wrap items-center gap-2">
+              <SaveTargetNotice target="xml" />
+              <Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+                <BookOpen /> {pageText(locale, 'guide', 'openImport')}
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       )}
+
+      <GuideDialog kind="importXml" open={guideOpen} onOpenChange={setGuideOpen} />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

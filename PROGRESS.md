@@ -50,7 +50,11 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
 - [x] Smoke run del pacchetto: CrateForge.exe parte e resta vivo (no crash all'avvio)
 - [ ] Test manuale UI umano su tutte le pagine (click-through con dati reali)
 - [ ] Ingest end-to-end da un VERO master.db (fixture minima non basta per pyrekordbox ORM: prevista opzione utente §11)
-- [ ] Istruzioni con screenshot per l'export XML manuale (ora solo testuali)
+- [x] Istruzioni visive per export/import XML manuale: GuideDialog con schemi
+      SVG disegnati (niente screenshot proprietari Pioneer), 4 lingue, 2 guide
+      (esporta collection / importa XML in Rekordbox). Agganciata a: Dashboard
+      (alert solo-XML + bottone sotto l'import), Converter (esito export),
+      Relocator (esito XML)
 - [x] Icona applicazione: `build/icon.png` + `icon.ico` generati (crate+vinili+scintilla,
       tema dark/ambra); electron-builder li rileva via buildResources e genera
       l'icns per mac. Rigenerabile: era PIL-script one-shot, il PNG è la fonte
