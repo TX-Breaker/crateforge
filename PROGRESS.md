@@ -133,6 +133,31 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (contenuto intatto, hash uguale), file inesistente (errore pulito).
       Suite: 72/72 verdi
 
+## SCRITTURA DIRETTA MASTER.DB (richiesta utente 03/07/2026) — COMPLETATA
+Ricerca: la cifratura del master.db (Rekordbox 6) è SQLCipher con chiave FISSA
+documentata pubblicamente (`402fd482...608497`, fonte liamcottle + pyrekordbox).
+pyrekordbox 0.4.3 (già dipendenza) espone la scrittura: `create_playlist`,
+`add_to_playlist`, `commit(autoinc=True)` che aggiorna l'USN. La scrittura è
+tecnicamente affidabile; l'unico vero rischio è la concorrenza con Rekordbox
+aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
+- [x] Sidecar `masterdb-create-playlist`: apre/riscrive/ricifra il master.db via
+      pyrekordbox, rollback su errore, riporta added/missing
+- [x] Gate `masterDbWrites` (setting separato e più forte di `directWrites`),
+      controllato ANCHE nel main (throw se off)
+- [x] Backup OBBLIGATORIO master.db + options.json (byte-copy Node, sorgente
+      read-only) in userData/backups/masterdb-<ts>/ PRIMA di ogni scrittura
+- [x] Set Builder: bottone "Scrivi playlist direttamente in Rekordbox" (solo se
+      opt-in), doppia conferma "MASTERDB" + istruzione "chiudi Rekordbox";
+      funziona solo su brani con source_id (libreria da master.db, non da XML)
+- [x] SaveTargetNotice nuovo target 'masterdb' (rosso), Impostazioni con
+      disclaimer forte (spiega chiave documentata vs rischio concorrenza), 4 lingue
+- [x] 78/78 test, typecheck pulito, sidecar ricompilato (comando presente,
+      ping ok, fpcalc reincluso), dist rigenerato, smoke ALIVE=True
+- [ ] NON testato end-to-end su un vero master.db (serve Rekordbox installato):
+      va provato dall'utente su una COPIA prima che su libreria reale
+- [ ] Estensioni future possibili (stessa infrastruttura): scrivere memory cue,
+      MyTag, oltre-8 hot cue — cose che l'XML non porta
+
 ## FUNZIONI EXTRA (proposte in autonomia, 03/07/2026) — COMPLETATE
 - [x] Salute libreria (modalità Semplice, read-only): punteggio 0–100 pesato
       (BPM/key 25+25, genere 15, anno 10, review 15, duplicati 10), righe

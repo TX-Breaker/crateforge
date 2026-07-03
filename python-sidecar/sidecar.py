@@ -29,6 +29,14 @@ Comandi fase intermedia (opt-in "scritture dirette", massima cautela):
                       con backup verificato per hash e rollback automatico
   download-key        recupera la chiave di decrittazione di Rekordbox
                       (fallback pyrekordbox §4.3, modalità Esperto)
+
+Comandi di scrittura DIRETTA nel master.db (opt-in massimo, Rekordbox chiuso):
+  masterdb-create-playlist   crea una playlist e vi aggiunge dei brani,
+                             scrivendo e ri-cifrando il master.db via
+                             pyrekordbox (gestisce l'USN con commit(autoinc)).
+                             La cifratura SQLCipher del db è documentata
+                             (chiave fissa nota); il rischio è la scrittura
+                             concorrente con Rekordbox aperto, non la cifratura.
 """
 
 from __future__ import annotations
@@ -747,6 +755,79 @@ def cmd_write_tags(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# masterdb-create-playlist — scrittura DIRETTA nel master.db (opt-in massimo)
+# ---------------------------------------------------------------------------
+
+def cmd_masterdb_create_playlist(args: argparse.Namespace) -> None:
+    """Crea una playlist nel master.db e vi aggiunge i brani indicati.
+
+    Scrittura documentata e supportata da pyrekordbox: create_playlist +
+    add_to_playlist + commit(autoinc=True), che aggiorna correttamente l'USN
+    (update sequence number) — il meccanismo con cui Rekordbox rileva le
+    modifiche. La ri-cifratura SQLCipher è gestita dalla libreria.
+
+    Precondizioni (verificate a monte da Node/UI, ribadite qui):
+      - Rekordbox DEVE essere chiuso (scrittura concorrente = corruzione);
+      - il backup di master.db+options.json è già stato fatto da Node (§3.2).
+    """
+    try:
+        from pyrekordbox import Rekordbox6Database
+    except ImportError:
+        fail("pyrekordbox non disponibile nel sidecar: rebuild richiesto.")
+        return
+
+    try:
+        content_ids = json.loads(args.content_ids_json)
+        assert isinstance(content_ids, list)
+    except (json.JSONDecodeError, AssertionError):
+        fail("--content-ids-json non valido: atteso un array di ID contenuto.")
+        return
+
+    db_dir = os.path.dirname(os.path.abspath(args.master_db))
+    try:
+        # key esplicita se fornita (chiave SQLCipher documentata), altrimenti
+        # pyrekordbox la cerca nella cache locale / la deriva.
+        db = Rekordbox6Database(path=args.master_db, key=args.key or "")
+    except Exception as exc:
+        fail(
+            "Apertura del master.db in scrittura non riuscita: "
+            f"{str(exc)[:300]}. Se la chiave non è disponibile, prova prima "
+            "'Scarica chiave di lettura' nelle Impostazioni."
+        )
+        return
+
+    progress = ThrottledProgress("masterdb-playlist")
+    added, missing = 0, 0
+    try:
+        playlist = db.create_playlist(args.playlist_name)
+        for i, cid in enumerate(content_ids):
+            content = db.get_content(ID=str(cid))
+            # get_content può ritornare una query: normalizza al primo record
+            record = content.first() if hasattr(content, "first") else content
+            if record is None:
+                missing += 1
+            else:
+                db.add_to_playlist(playlist, record)
+                added += 1
+            progress.update(i + 1, len(content_ids))
+        db.commit()  # autoinc=True di default: aggiorna l'USN
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        db.close()
+        fail(f"Scrittura nel master.db non riuscita (nessuna modifica salvata): {str(exc)[:300]}")
+        return
+    progress.finish(len(content_ids), len(content_ids))
+    db.close()
+    emit({
+        "type": "done",
+        "data": {"playlist": args.playlist_name, "added": added, "missing": missing, "dbDir": db_dir},
+    })
+
+
+# ---------------------------------------------------------------------------
 # download-key — fallback chiave Rekordbox (§4.3, Esperto, in-app)
 # ---------------------------------------------------------------------------
 
@@ -846,6 +927,13 @@ def main() -> None:
     p_dk = sub.add_parser("download-key")
     p_dk.add_argument("--udm-path", required=True)
 
+    p_mcp = sub.add_parser("masterdb-create-playlist")
+    p_mcp.add_argument("--udm-path", required=True)
+    p_mcp.add_argument("--master-db", required=True)
+    p_mcp.add_argument("--playlist-name", required=True)
+    p_mcp.add_argument("--content-ids-json", required=True)
+    p_mcp.add_argument("--key", required=False, default="")
+
     args = parser.parse_args()
 
     if args.command == "ping":
@@ -866,6 +954,8 @@ def main() -> None:
         cmd_write_tags(args)
     elif args.command == "download-key":
         cmd_download_key(args)
+    elif args.command == "masterdb-create-playlist":
+        cmd_masterdb_create_playlist(args)
 
 
 if __name__ == "__main__":

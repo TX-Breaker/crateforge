@@ -16,6 +16,7 @@ export function SettingsPage() {
   const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'settings', k, p);
   const [sidecar, setSidecar] = useState<{ available: boolean; binaryPath?: string } | null>(null);
   const [directWrites, setDirectWrites] = useState(false);
+  const [masterDbWrites, setMasterDbWrites] = useState(false);
   const [discogsToken, setDiscogsToken] = useState('');
   const [keyMsg, setKeyMsg] = useState<string | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
@@ -23,12 +24,18 @@ export function SettingsPage() {
   useEffect(() => {
     window.crateforge.sidecar.check().then(setSidecar);
     window.crateforge.settings.get('directWrites').then((v) => setDirectWrites(v === '1'));
+    window.crateforge.settings.get('masterDbWrites').then((v) => setMasterDbWrites(v === '1'));
     window.crateforge.settings.get('discogsToken').then((v) => setDiscogsToken(v ?? ''));
   }, []);
 
   const toggleDirectWrites = (v: boolean) => {
     setDirectWrites(v);
     window.crateforge.settings.set('directWrites', v ? '1' : '0');
+  };
+
+  const toggleMasterDbWrites = (v: boolean) => {
+    setMasterDbWrites(v);
+    window.crateforge.settings.set('masterDbWrites', v ? '1' : '0');
   };
 
   const doDownloadKey = async () => {
@@ -127,6 +134,19 @@ export function SettingsPage() {
                 <Alert variant="destructive">
                   <AlertTitle>{tp('directOnTitle')}</AlertTitle>
                   <AlertDescription>{tp('directOnBody')}</AlertDescription>
+                </Alert>
+              )}
+              <label className="flex items-center justify-between border-t pt-3 text-sm">
+                <span>
+                  <Label>{tp('masterdbLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">{tp('masterdbDesc')}</p>
+                </span>
+                <Switch checked={masterDbWrites} onCheckedChange={toggleMasterDbWrites} />
+              </label>
+              {masterDbWrites && (
+                <Alert variant="destructive">
+                  <AlertTitle>{tp('masterdbOnTitle')}</AlertTitle>
+                  <AlertDescription>{tp('masterdbOnBody')}</AlertDescription>
                 </Alert>
               )}
               <div className="space-y-1.5 border-t pt-3">

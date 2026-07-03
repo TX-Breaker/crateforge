@@ -115,6 +115,15 @@ const api = {
     exportXml: (trackIds: number[], playlistName: string, outPath: string) =>
       ipcRenderer.invoke('setbuilder:exportXml', trackIds, playlistName, outPath)
   },
+  masterdb: {
+    createPlaylist: (
+      trackIds: number[],
+      playlistName: string,
+      masterDbPath: string,
+      optionsJsonPath: string | null
+    ) =>
+      ipcRenderer.invoke('masterdb:createPlaylist', trackIds, playlistName, masterDbPath, optionsJsonPath)
+  },
   dialog: {
     openFile: (filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:openFile', filters),

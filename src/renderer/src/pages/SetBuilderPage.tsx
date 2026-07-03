@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { ArrowDown, ArrowRight, ArrowUp, ListMusic, Minus, Search, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowRight, ArrowUp, Database, ListMusic, Minus, Search, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Input, Label } from '@/components/ui/misc';
-import { SaveTargetNotice } from '@/components/SaveTargetNotice';
+import { SaveTargetNotice, type SaveTarget } from '@/components/SaveTargetNotice';
+import { DangerConfirmDialog } from '@/components/DangerConfirmDialog';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
 
@@ -55,8 +56,14 @@ export function SetBuilderPage() {
   const [curve, setCurve] = useState<Curve>('up');
   const [built, setBuilt] = useState<BuildResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<{ text: string; target: SaveTarget } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [masterDbWrites, setMasterDbWrites] = useState(false);
+  const [confirmMdb, setConfirmMdb] = useState(false);
+
+  useEffect(() => {
+    window.crateforge.settings.get('masterDbWrites').then((v) => setMasterDbWrites(v === '1'));
+  }, []);
 
   const doSearch = async () => {
     const r = await window.crateforge.library.page({ offset: 0, limit: 20, search });
@@ -90,7 +97,42 @@ export function SetBuilderPage() {
       name,
       outPath
     );
-    setOutcome(tp('outDone', { name, path: outPath, n: r.written }));
+    setOutcome({ text: tp('outDone', { name, path: outPath, n: r.written }), target: 'xml' });
+  };
+
+  const doMasterdbWrite = async () => {
+    if (!built) return;
+    const masterDbPath = await window.crateforge.dialog.openFile([
+      { name: 'Rekordbox master.db', extensions: ['db'] }
+    ]);
+    if (!masterDbPath) return;
+    const optionsPath = await window.crateforge.dialog.openFile([
+      { name: 'options.json', extensions: ['json'] }
+    ]);
+    const name = tp('plName');
+    setBusy(true);
+    setError(null);
+    setOutcome(null);
+    try {
+      const r = await window.crateforge.masterdb.createPlaylist(
+        built.tracks.map((t) => t.id),
+        name,
+        masterDbPath,
+        optionsPath
+      );
+      if (!r.ok) {
+        setError(tp('mdbErr', { msg: r.message ?? '?' }));
+      } else {
+        setOutcome({
+          text: tp('mdbOutDone', { name, n: r.added, missing: r.missing, dir: r.backupDir }),
+          target: 'masterdb'
+        });
+      }
+    } catch (err) {
+      setError(tp('mdbErr', { msg: String(err) }));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const curves: { id: Curve; label: string; icon: React.ReactNode }[] = [
@@ -222,9 +264,16 @@ export function SetBuilderPage() {
                 </div>
               ))}
             </div>
-            <Button onClick={doExport}>
-              <ListMusic /> {tp('exportBtn')}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={doExport}>
+                <ListMusic /> {tp('exportBtn')}
+              </Button>
+              {masterDbWrites && (
+                <Button variant="destructive" onClick={() => setConfirmMdb(true)} disabled={busy}>
+                  <Database /> {tp('mdbBtn')}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -232,8 +281,8 @@ export function SetBuilderPage() {
       {outcome && (
         <Alert>
           <AlertDescription className="space-y-2">
-            <p>{outcome}</p>
-            <SaveTargetNotice target="xml" />
+            <p>{outcome.text}</p>
+            <SaveTargetNotice target={outcome.target} />
           </AlertDescription>
         </Alert>
       )}
@@ -242,6 +291,21 @@ export function SetBuilderPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <DangerConfirmDialog
+        open={confirmMdb}
+        onOpenChange={setConfirmMdb}
+        title={tp('mdbDlgTitle')}
+        confirmWord="MASTERDB"
+        confirmLabel={tp('mdbDlgLabel')}
+        onConfirm={doMasterdbWrite}
+        description={
+          <>
+            <p>{tp('mdbDlgBody1', { name: tp('plName'), n: built?.tracks.length ?? 0 })}</p>
+            <p>{tp('mdbDlgBody2')}</p>
+          </>
+        }
+      />
     </div>
   );
 }

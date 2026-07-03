@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/misc';
 import { useAppState } from '@/lib/appState';
 import { t } from '@/lib/i18n';
 
-export type SaveTarget = 'udm' | 'copy' | 'original' | 'xml';
+export type SaveTarget = 'udm' | 'copy' | 'original' | 'xml' | 'masterdb';
 
 /**
  * Badge che dichiara SEMPRE dove è finito un salvataggio (fase intermedia):
@@ -16,7 +16,8 @@ export function SaveTargetNotice({ target }: { target: SaveTarget }) {
     udm: { key: 'target.udm' as const, icon: <Database className="h-3 w-3" />, variant: 'secondary' as const },
     copy: { key: 'target.copy' as const, icon: <Copy className="h-3 w-3" />, variant: 'secondary' as const },
     xml: { key: 'target.xml' as const, icon: <FileOutput className="h-3 w-3" />, variant: 'secondary' as const },
-    original: { key: 'target.original' as const, icon: <FileWarning className="h-3 w-3" />, variant: 'destructive' as const }
+    original: { key: 'target.original' as const, icon: <FileWarning className="h-3 w-3" />, variant: 'destructive' as const },
+    masterdb: { key: 'target.masterdb' as const, icon: <FileWarning className="h-3 w-3" />, variant: 'destructive' as const }
   };
   const m = map[target];
   return (

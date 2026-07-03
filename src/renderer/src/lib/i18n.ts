@@ -39,7 +39,8 @@ const dict = {
     'target.udm': 'Salvato nel database di CrateForge (copia di lavoro) — file originali intatti',
     'target.copy': 'Salvato su una copia — file originali intatti',
     'target.original': 'ATTENZIONE: salvato sui FILE ORIGINALI',
-    'target.xml': 'Scritto in un file XML da importare a mano in Rekordbox'
+    'target.xml': 'Scritto in un file XML da importare a mano in Rekordbox',
+    'target.masterdb': 'ATTENZIONE: scritto DIRETTAMENTE nel database di Rekordbox'
   },
   en: {
     'nav.dashboard': 'Overview',
@@ -73,7 +74,8 @@ const dict = {
     'target.udm': 'Saved to the CrateForge database (working copy) — original files untouched',
     'target.copy': 'Saved to a copy — original files untouched',
     'target.original': 'WARNING: saved to the ORIGINAL FILES',
-    'target.xml': 'Written to an XML file to import manually into Rekordbox'
+    'target.xml': 'Written to an XML file to import manually into Rekordbox',
+    'target.masterdb': 'WARNING: written DIRECTLY into the Rekordbox database'
   },
   fr: {
     'nav.dashboard': 'Vue d\'ensemble',
@@ -107,7 +109,8 @@ const dict = {
     'target.udm': 'Enregistré dans la base CrateForge (copie de travail) — fichiers originaux intacts',
     'target.copy': 'Enregistré sur une copie — fichiers originaux intacts',
     'target.original': 'ATTENTION : enregistré sur les FICHIERS ORIGINAUX',
-    'target.xml': 'Écrit dans un fichier XML à importer manuellement dans Rekordbox'
+    'target.xml': 'Écrit dans un fichier XML à importer manuellement dans Rekordbox',
+    'target.masterdb': 'ATTENTION : écrit DIRECTEMENT dans la base Rekordbox'
   },
   de: {
     'nav.dashboard': 'Übersicht',
@@ -141,7 +144,8 @@ const dict = {
     'target.udm': 'In der CrateForge-Datenbank gespeichert (Arbeitskopie) — Originale unangetastet',
     'target.copy': 'Auf einer Kopie gespeichert — Originale unangetastet',
     'target.original': 'ACHTUNG: auf den ORIGINALDATEIEN gespeichert',
-    'target.xml': 'In eine XML-Datei geschrieben — manuell in Rekordbox importieren'
+    'target.xml': 'In eine XML-Datei geschrieben — manuell in Rekordbox importieren',
+    'target.masterdb': 'ACHTUNG: DIREKT in die Rekordbox-Datenbank geschrieben'
   }
 } as const;
 

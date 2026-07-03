@@ -23,7 +23,8 @@ import { SERATO_STATUS } from '@adapters/serato';
 import { ENGINE_STATUS } from '@adapters/engine';
 import { applyProposals, proposeTags, TagProposal, TagProvider } from '@services/tagger/autoTagger';
 import { app } from 'electron';
-import { join } from 'path';
+import { join, basename } from 'path';
+import { copyFileSync, mkdirSync } from 'fs';
 import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDaemon';
 import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
 import { buildSet, BpmCurve } from '@services/setbuilder/setBuilder';
@@ -666,6 +667,83 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
       const r = writeSetXml(db, trackIds, playlistName, outPath);
       logOperation(db, 'setbuilder.xml', outPath, 'ok', `${r.written} brani in "${playlistName}"`);
       return r;
+    }
+  );
+
+  // ---- Scrittura DIRETTA nel master.db (opt-in massimo, Rekordbox chiuso) ----
+  // La cifratura SQLCipher è documentata (chiave fissa nota); pyrekordbox
+  // scrive e ri-cifra gestendo l'USN. Gate: setting masterDbWrites nel main.
+  // Node copia (byte, sola lettura sul sorgente) master.db+options.json in un
+  // backup datato PRIMA di qualsiasi scrittura (§3.2).
+  ipcMain.handle(
+    'masterdb:createPlaylist',
+    async (
+      _e,
+      trackIds: number[],
+      playlistName: string,
+      masterDbPath: string,
+      optionsJsonPath: string | null
+    ) => {
+      if (getSetting(db, 'masterDbWrites') !== '1') {
+        throw new Error(
+          'La scrittura diretta nel database di Rekordbox è disattivata. ' +
+            'Attivala in Impostazioni → Esperto (con tutti gli avvisi del caso).'
+        );
+      }
+      const check = checkSidecar();
+      if (!check.available) {
+        return { ok: false, message: 'Il modulo di lettura/scrittura non è disponibile.' };
+      }
+      // Risolvi gli ID contenuto del master.db dai brani UDM (source_id).
+      const idStmt = db.prepare(`SELECT source_id FROM tracks WHERE id = ?`);
+      const contentIds = trackIds
+        .map((id) => (idStmt.get(id) as { source_id: string | null } | undefined)?.source_id)
+        .filter((s): s is string => !!s);
+      if (contentIds.length === 0) {
+        return {
+          ok: false,
+          message:
+            'Nessuno dei brani selezionati ha un identificativo del database Rekordbox ' +
+            '(serve una libreria importata da master.db, non da XML).'
+        };
+      }
+
+      // Backup obbligatorio PRIMA di scrivere (§3.2).
+      const backupDir = join(
+        app.getPath('userData'),
+        'backups',
+        `masterdb-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
+      );
+      try {
+        mkdirSync(backupDir, { recursive: true });
+        copyFileSync(masterDbPath, join(backupDir, basename(masterDbPath)));
+        if (optionsJsonPath) copyFileSync(optionsJsonPath, join(backupDir, basename(optionsJsonPath)));
+      } catch (err) {
+        logOperation(db, 'masterdb.backup', backupDir, 'error', String(err));
+        return { ok: false, message: `Backup del database non riuscito, scrittura annullata: ${String(err)}` };
+      }
+      logOperation(db, 'masterdb.backup', backupDir, 'ok', `${basename(masterDbPath)} + options.json`);
+
+      const r = await runSidecarJob('masterdb-create-playlist', 'masterdb-playlist', [
+        '--master-db',
+        masterDbPath,
+        '--playlist-name',
+        playlistName,
+        '--content-ids-json',
+        JSON.stringify(contentIds)
+      ]);
+      if (!r.ok) {
+        logOperation(db, 'masterdb.createPlaylist', masterDbPath, 'error', r.message);
+        return { ok: false, message: r.message, backupDir };
+      }
+      logOperation(
+        db,
+        'masterdb.createPlaylist',
+        masterDbPath,
+        'ok',
+        `SCRITTURA DIRETTA: playlist "${playlistName}", ${JSON.stringify(r.data)}`
+      );
+      return { ok: true, ...r.data, backupDir, requested: trackIds.length };
     }
   );
 
