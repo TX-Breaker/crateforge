@@ -9,6 +9,8 @@ export type Locale = 'it' | 'en' | 'fr' | 'de';
 const dict = {
   it: {
     'nav.dashboard': 'Panoramica',
+    'nav.health': 'Salute libreria',
+    'nav.setbuilder': 'Set Builder',
     'nav.backup': 'Backup',
     'nav.orphans': 'File orfani',
     'nav.report': 'Report Excel',
@@ -41,6 +43,8 @@ const dict = {
   },
   en: {
     'nav.dashboard': 'Overview',
+    'nav.health': 'Library health',
+    'nav.setbuilder': 'Set Builder',
     'nav.backup': 'Backup',
     'nav.orphans': 'Orphan files',
     'nav.report': 'Excel report',
@@ -73,6 +77,8 @@ const dict = {
   },
   fr: {
     'nav.dashboard': 'Vue d\'ensemble',
+    'nav.health': 'Santé bibliothèque',
+    'nav.setbuilder': 'Set Builder',
     'nav.backup': 'Sauvegarde',
     'nav.orphans': 'Fichiers orphelins',
     'nav.report': 'Rapport Excel',
@@ -105,6 +111,8 @@ const dict = {
   },
   de: {
     'nav.dashboard': 'Übersicht',
+    'nav.health': 'Bibliotheks-Gesundheit',
+    'nav.setbuilder': 'Set Builder',
     'nav.backup': 'Backup',
     'nav.orphans': 'Verwaiste Dateien',
     'nav.report': 'Excel-Bericht',

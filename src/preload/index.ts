@@ -106,6 +106,15 @@ const api = {
     playlists: () => ipcRenderer.invoke('planner:playlists'),
     analyze: (playlistId: number) => ipcRenderer.invoke('planner:analyze', playlistId)
   },
+  health: {
+    get: () => ipcRenderer.invoke('health:get')
+  },
+  setbuilder: {
+    build: (startTrackId: number, length: number, curve: 'up' | 'flat' | 'down') =>
+      ipcRenderer.invoke('setbuilder:build', startTrackId, length, curve),
+    exportXml: (trackIds: number[], playlistName: string, outPath: string) =>
+      ipcRenderer.invoke('setbuilder:exportXml', trackIds, playlistName, outPath)
+  },
   dialog: {
     openFile: (filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:openFile', filters),

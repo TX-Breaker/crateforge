@@ -7,6 +7,7 @@ import {
   FolderSync,
   Globe,
   HardDriveDownload,
+  HeartPulse,
   Home,
   Info,
   MapPin,
@@ -15,6 +16,7 @@ import {
   ScrollText,
   Settings,
   Sheet,
+  Sparkles,
   Wand2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,6 +24,8 @@ import { useAppState } from '@/lib/appState';
 import { t, type MsgKey } from '@/lib/i18n';
 import { Badge } from '@/components/ui/misc';
 import { Dashboard } from '@/pages/Dashboard';
+import { HealthPage } from '@/pages/HealthPage';
+import { SetBuilderPage } from '@/pages/SetBuilderPage';
 import { BackupPage } from '@/pages/BackupPage';
 import { OrphansPage } from '@/pages/OrphansPage';
 import { ReportPage } from '@/pages/ReportPage';
@@ -40,6 +44,8 @@ import { AboutPage } from '@/pages/AboutPage';
 
 type PageId =
   | 'dashboard'
+  | 'health'
+  | 'setbuilder'
   | 'backup'
   | 'orphans'
   | 'report'
@@ -66,6 +72,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { id: 'dashboard', labelKey: 'nav.dashboard', icon: <Home /> },
+  { id: 'health', labelKey: 'nav.health', icon: <HeartPulse /> },
   { id: 'backup', labelKey: 'nav.backup', icon: <HardDriveDownload /> },
   { id: 'orphans', labelKey: 'nav.orphans', icon: <FileWarning /> },
   { id: 'report', labelKey: 'nav.report', icon: <Sheet /> },
@@ -77,6 +84,7 @@ const NAV: NavItem[] = [
   { id: 'stems', labelKey: 'nav.stems', icon: <AudioLines />, expertOnly: true },
   { id: 'inbox', labelKey: 'nav.inbox', icon: <FolderSync />, expertOnly: true },
   { id: 'planner', labelKey: 'nav.planner', icon: <Route />, expertOnly: true },
+  { id: 'setbuilder', labelKey: 'nav.setbuilder', icon: <Sparkles />, expertOnly: true },
   { id: 'review', labelKey: 'nav.review', icon: <FileEdit /> },
   { id: 'log', labelKey: 'nav.log', icon: <ScrollText /> },
   { id: 'settings', labelKey: 'nav.settings', icon: <Settings /> },
@@ -128,6 +136,8 @@ export function App() {
 
       <main className="flex-1 overflow-y-auto p-8">
         {active === 'dashboard' && <Dashboard />}
+        {active === 'health' && <HealthPage />}
+        {active === 'setbuilder' && <SetBuilderPage />}
         {active === 'backup' && <BackupPage />}
         {active === 'orphans' && <OrphansPage />}
         {active === 'report' && <ReportPage />}

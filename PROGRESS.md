@@ -133,6 +133,22 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (contenuto intatto, hash uguale), file inesistente (errore pulito).
       Suite: 72/72 verdi
 
+## FUNZIONI EXTRA (proposte in autonomia, 03/07/2026) — COMPLETATE
+- [x] Salute libreria (modalità Semplice, read-only): punteggio 0–100 pesato
+      (BPM/key 25+25, genere 15, anno 10, review 15, duplicati 10), righe
+      "cosa manca → dove sistemarlo" con barre percentuali; solo COUNT SQL,
+      niente scansioni filesystem. core/health.ts + HealthPage
+- [x] Set Builder (Esperto, read-only): scaletta suggerita da un brano di
+      partenza — greedy su regola Camelot + finestra BPM ±6%, curva
+      up/flat/down (~±1.5%/passo), bonus stesso genere, malus stesso artista
+      di fila, stop onesto con "exhausted" se mancano candidati; export XML
+      con playlist "CrateForge – Set Builder" (import manuale, come sempre).
+      services/setbuilder + adapters/rekordbox/setXml + SetBuilderPage
+- [x] i18n completo per entrambe (namespace health/setbuilder × 4 lingue)
+- [x] Test: health (vuota/perfetta/buchi+duplicati), setBuilder (catena
+      compatibile senza ripetizioni, exhausted, errore su start senza
+      key/BPM) — 78/78 verdi
+
 ## FASE 3 — Power user (modalità Esperto) — CORE FUNZIONANTE
 - [x] Sync Daemon "Nuovi Acquisti": fs.watch ricorsivo con debounce 2s, scansione
       idempotente (skip file già in coda o in libreria), tag via music-metadata,

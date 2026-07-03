@@ -26,7 +26,10 @@ import { app } from 'electron';
 import { join } from 'path';
 import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDaemon';
 import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
+import { buildSet, BpmCurve } from '@services/setbuilder/setBuilder';
+import { computeHealth } from '@core/health';
 import { writeInboxXml } from '@adapters/rekordbox/inboxXml';
+import { writeSetXml } from '@adapters/rekordbox/setXml';
 import type { TrackRow } from '@core/udm';
 import { ThrottledProgress } from './progress';
 import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
@@ -647,6 +650,24 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     logOperation(db, 'inbox.xml', outPath, 'ok', `${r.written} nuovi brani nell'XML`);
     return { ...r, excludedForIssues: ids.length - chosen.length };
   });
+
+  // ---- Salute libreria (read-only, modalità Semplice) ----
+  ipcMain.handle('health:get', () => computeHealth(db));
+
+  // ---- Set Builder (Esperto, read-only; export = solito XML manuale) ----
+  ipcMain.handle(
+    'setbuilder:build',
+    (_e, startTrackId: number, length: number, curve: BpmCurve) =>
+      buildSet(db, startTrackId, length, curve)
+  );
+  ipcMain.handle(
+    'setbuilder:exportXml',
+    (_e, trackIds: number[], playlistName: string, outPath: string) => {
+      const r = writeSetXml(db, trackIds, playlistName, outPath);
+      logOperation(db, 'setbuilder.xml', outPath, 'ok', `${r.written} brani in "${playlistName}"`);
+      return r;
+    }
+  );
 
   // ---- Set Planner (§6 Fase 3.2, read-only) ----
   ipcMain.handle('planner:playlists', () => listPlaylists(db));
