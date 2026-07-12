@@ -14,7 +14,7 @@ import type BetterSqlite3 from 'better-sqlite3';
  *    I due percorsi non girano mai in concorrenza: Node serializza i job.
  *  - settings / jobs / oplog → SOLO Node.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -150,6 +150,59 @@ const MIGRATIONS: Record<number, string> = {
       added_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(status);
+  `,
+  // Conversione bidirezionale: allarga il vincolo `source` di tracks/playlists
+  // per accettare gli import dagli altri software DJ (traktor, virtualdj,
+  // engine, serato) oltre a masterdb/xml. SQLite non permette di modificare un
+  // CHECK: ricostruiamo le due tabelle SENZA CHECK (il valore è validato in
+  // codice). Gli id restano invariati, quindi le FK di cues/playlist_tracks
+  // continuano a puntare correttamente. La migrate() gira con foreign_keys OFF
+  // (vedi openUdm), così il DROP non fa cascade sui figli.
+  4: `
+    CREATE TABLE tracks_new (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL,
+      source_id TEXT,
+      title TEXT,
+      artist TEXT,
+      album TEXT,
+      genre TEXT,
+      year INTEGER,
+      bpm REAL,
+      musical_key TEXT,
+      camelot TEXT,
+      duration_s REAL,
+      path TEXT,
+      filesize INTEGER,
+      file_mtime INTEGER,
+      version_label TEXT,
+      has_tag_issues INTEGER NOT NULL DEFAULT 0,
+      needs_review INTEGER NOT NULL DEFAULT 0,
+      review_reason TEXT,
+      acoustic_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (source, source_id)
+    );
+    INSERT INTO tracks_new SELECT * FROM tracks;
+    DROP TABLE tracks;
+    ALTER TABLE tracks_new RENAME TO tracks;
+    CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
+    CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
+    CREATE INDEX IF NOT EXISTS idx_tracks_review ON tracks(needs_review);
+
+    CREATE TABLE playlists_new (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL,
+      source_id TEXT,
+      name TEXT NOT NULL,
+      parent_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE,
+      is_folder INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (source, source_id)
+    );
+    INSERT INTO playlists_new SELECT * FROM playlists;
+    DROP TABLE playlists;
+    ALTER TABLE playlists_new RENAME TO playlists;
   `
 };
 

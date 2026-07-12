@@ -38,7 +38,13 @@ const pages: Record<Locale, PageDict> = {
         'La libreria viene copiata nel database interno di CrateForge. I file di Rekordbox vengono aperti in sola lettura: nessuna modifica agli originali, mai.',
       importXmlBtn: 'Importa collection XML',
       importDbBtn: 'Leggi master.db direttamente',
-      lastIngest: 'Ultima importazione'
+      lastIngest: 'Ultima importazione',
+      foreignTitle: 'Importa da un altro software DJ',
+      foreignDesc: 'Porta in CrateForge una libreria Traktor o VirtualDJ (sola lettura sul file di origine). Da qui la converti verso Rekordbox e gli altri.',
+      foreignTraktor: 'Importa collection Traktor (.nml)',
+      foreignVirtualdj: 'Importa database VirtualDJ (.xml)',
+      foreignOk: 'Importati {tracks} brani, {playlists} playlist, {cues} cue.',
+      foreignErr: 'Importazione non riuscita: {msg}'
     },
     backup: {
       title: 'Backup Smart Incrementale',
@@ -477,7 +483,13 @@ const pages: Record<Locale, PageDict> = {
         'The library is copied into the internal CrateForge database. Rekordbox files are opened read-only: your originals are never modified.',
       importXmlBtn: 'Import collection XML',
       importDbBtn: 'Read master.db directly',
-      lastIngest: 'Last import'
+      lastIngest: 'Last import',
+      foreignTitle: 'Import from another DJ software',
+      foreignDesc: 'Bring a Traktor or VirtualDJ library into CrateForge (read-only on the source file). From here you convert it to Rekordbox and the others.',
+      foreignTraktor: 'Import Traktor collection (.nml)',
+      foreignVirtualdj: 'Import VirtualDJ database (.xml)',
+      foreignOk: 'Imported {tracks} tracks, {playlists} playlists, {cues} cues.',
+      foreignErr: 'Import failed: {msg}'
     },
     backup: {
       title: 'Smart Incremental Backup',
@@ -916,7 +928,13 @@ const pages: Record<Locale, PageDict> = {
         'La bibliothèque est copiée dans la base interne de CrateForge. Les fichiers Rekordbox sont ouverts en lecture seule : vos originaux ne sont jamais modifiés.',
       importXmlBtn: 'Importer la collection XML',
       importDbBtn: 'Lire master.db directement',
-      lastIngest: 'Dernier import'
+      lastIngest: 'Dernier import',
+      foreignTitle: 'Importer depuis un autre logiciel DJ',
+      foreignDesc: 'Amenez une bibliothèque Traktor ou VirtualDJ dans CrateForge (lecture seule sur le fichier source). De là vous la convertissez vers Rekordbox et les autres.',
+      foreignTraktor: 'Importer la collection Traktor (.nml)',
+      foreignVirtualdj: 'Importer la base VirtualDJ (.xml)',
+      foreignOk: '{tracks} titres, {playlists} playlists, {cues} cues importés.',
+      foreignErr: "Échec de l'import : {msg}"
     },
     backup: {
       title: 'Sauvegarde intelligente incrémentale',
@@ -1355,7 +1373,13 @@ const pages: Record<Locale, PageDict> = {
         'Die Bibliothek wird in die interne CrateForge-Datenbank kopiert. Rekordbox-Dateien werden nur lesend geöffnet: deine Originale werden nie verändert.',
       importXmlBtn: 'Collection-XML importieren',
       importDbBtn: 'master.db direkt lesen',
-      lastIngest: 'Letzter Import'
+      lastIngest: 'Letzter Import',
+      foreignTitle: 'Aus einer anderen DJ-Software importieren',
+      foreignDesc: 'Bring eine Traktor- oder VirtualDJ-Bibliothek in CrateForge (nur lesend auf der Quelldatei). Von hier konvertierst du sie nach Rekordbox und zu den anderen.',
+      foreignTraktor: 'Traktor-Collection importieren (.nml)',
+      foreignVirtualdj: 'VirtualDJ-Datenbank importieren (.xml)',
+      foreignOk: '{tracks} Titel, {playlists} Playlists, {cues} Cues importiert.',
+      foreignErr: 'Import fehlgeschlagen: {msg}'
     },
     backup: {
       title: 'Intelligentes inkrementelles Backup',

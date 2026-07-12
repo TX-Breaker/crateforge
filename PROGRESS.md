@@ -133,6 +133,26 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (contenuto intatto, hash uguale), file inesistente (errore pulito).
       Suite: 72/72 verdi
 
+## CONVERSIONE BIDIREZIONALE (richiesta utente 03/07/2026) — IN CORSO
+Obiettivo: import DA ogni software DJ verso l'UDM (hub) + export verso ogni
+software. Oggi export c'era (Rekordbox XML, Traktor NML, VirtualDJ XML); mancava
+l'IMPORT dagli altri. Architettura: reader → modello normalizzato
+(`core/foreignImport.ts`, NormTrack/NormCue/NormPlaylist) → UDM con `source`
+dedicato. Migrazione schema v4: allargato il vincolo `source` di tracks/playlists
+(ricostruzione tabelle senza CHECK, id preservati, FK OFF durante migrate).
+- [x] Blocco 1: import Traktor NML (`adapters/traktor/nmlReader.ts`) e VirtualDJ
+      database.xml (`adapters/virtualdj/vdjReader.ts`), pure-Node, sola lettura.
+      Mappano brani, BPM (VDJ secondi-per-beat→BPM), key (Traktor index 0-23→
+      classica), cue hot/loop (grid/beatgrid esclusi), playlist Traktor (VDJ no:
+      sono .vdjfolder). Idempotente per (source, source_id). UI Dashboard
+      "Importa da un altro software DJ" + i18n 4 lingue. 84/84 test (6 nuovi:
+      migrazione v4, path Traktor, import Traktor+VDJ, vdjBpm)
+- [ ] Blocco 2: import Engine DJ (SQLite in chiaro via better-sqlite3, brani +
+      playlist; cue sono blob, rimandati)
+- [ ] Blocco 3: import/export Serato (GEOB ID3 via sidecar Python/mutagen)
+- [ ] Blocco 4: "Hub di conversione" UX — matrice import/export con avvisi di
+      perdita dati onesti; completare i writer (cue/beatgrid mancanti)
+
 ## SCRITTURA DIRETTA MASTER.DB (richiesta utente 03/07/2026) — COMPLETATA
 Ricerca: la cifratura del master.db (Rekordbox 6) è SQLCipher con chiave FISSA
 documentata pubblicamente (`402fd482...608497`, fonte liamcottle + pyrekordbox).

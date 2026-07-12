@@ -11,9 +11,12 @@ export function openUdm(udmPath: string): BetterSqlite3.Database {
   const db = new Database(udmPath);
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
-  db.pragma('foreign_keys = ON');
   db.pragma('synchronous = NORMAL');
+  // FK OFF durante le migrazioni: la v4 ricostruisce tracks/playlists e il DROP
+  // non deve innescare i CASCADE su cues/playlist_tracks. Riattivate subito dopo.
+  db.pragma('foreign_keys = OFF');
   migrate(db);
+  db.pragma('foreign_keys = ON');
   return db;
 }
 

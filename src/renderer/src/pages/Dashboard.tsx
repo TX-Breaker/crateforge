@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Database, FileWarning, FolderOpen, Import, Music2 } from 'lucide-react';
+import { BookOpen, Database, FileWarning, FolderOpen, Import, Music2, Shuffle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
@@ -54,6 +54,35 @@ export function Dashboard() {
       await refresh();
     } catch (err) {
       setMessage({ kind: 'error', text: `Importazione non riuscita: ${String(err)}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importForeign = async (kind: 'traktor' | 'virtualdj') => {
+    const ext = kind === 'traktor' ? 'nml' : 'xml';
+    const path = await window.crateforge.dialog.openFile([
+      { name: kind === 'traktor' ? 'Traktor collection' : 'VirtualDJ database', extensions: [ext] }
+    ]);
+    if (!path) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await window.crateforge.library.importForeign(kind, path);
+      if (r.ok) {
+        setMessage({
+          kind: 'info',
+          text:
+            pageText(locale, 'dashboard', 'foreignOk', {
+              tracks: r.tracks,
+              playlists: r.playlists,
+              cues: r.cues
+            }) + (r.warnings?.length ? ` ${r.warnings.join(' ')}` : '')
+        });
+      } else {
+        setMessage({ kind: 'error', text: pageText(locale, 'dashboard', 'foreignErr', { msg: r.message }) });
+      }
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -134,6 +163,25 @@ export function Dashboard() {
               {stats.lastIngest.finished_at ? `, ${stats.lastIngest.finished_at}` : ''})
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shuffle className="h-4 w-4" /> {tp('foreignTitle')}
+          </CardTitle>
+          <CardDescription>{tp('foreignDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={() => importForeign('traktor')} disabled={busy}>
+              <Import /> {tp('foreignTraktor')}
+            </Button>
+            <Button variant="secondary" onClick={() => importForeign('virtualdj')} disabled={busy}>
+              <Import /> {tp('foreignVirtualdj')}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
