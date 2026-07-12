@@ -44,6 +44,70 @@ const FORMATS: { id: Format; title: string; descKey: string; ext: string; defaul
   }
 ];
 
+type Cap = 'full' | 'partial' | 'none';
+type TpFn = (k: string, p?: Record<string, string | number>) => string;
+
+const MATRIX: { app: string; imp: Cap; impKey: string; exp: Cap; expKey: string }[] = [
+  { app: 'Rekordbox', imp: 'full', impKey: 'rbImport', exp: 'full', expKey: 'rbExport' },
+  { app: 'Traktor', imp: 'full', impKey: 'trImport', exp: 'full', expKey: 'trExport' },
+  { app: 'VirtualDJ', imp: 'partial', impKey: 'vdjImport', exp: 'full', expKey: 'vdjExport' },
+  { app: 'Engine DJ', imp: 'partial', impKey: 'enImport', exp: 'none', expKey: 'enExport' },
+  { app: 'Serato', imp: 'none', impKey: 'srImport', exp: 'none', expKey: 'srExport' }
+];
+
+const CAP_ICON: Record<Cap, string> = { full: '●', partial: '◐', none: '○' };
+const CAP_CLASS: Record<Cap, string> = {
+  full: 'text-primary',
+  partial: 'text-warning-foreground',
+  none: 'text-muted-foreground'
+};
+
+/** Matrice bidirezionale: rende esplicito cosa importa/esporta CrateForge oggi. */
+function ConversionMatrix({ tp }: { tp: TpFn }) {
+  const cell = (cap: Cap, key: string) => (
+    <td className="px-3 py-2 align-top">
+      <span className={`mr-1 ${CAP_CLASS[cap]}`}>{CAP_ICON[cap]}</span>
+      <span className="text-xs text-muted-foreground">{tp(key)}</span>
+    </td>
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{tp('matrixTitle')}</CardTitle>
+        <CardDescription>{tp('matrixDesc')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">{tp('colSoftware')}</th>
+                <th className="px-3 py-2">{tp('colImport')}</th>
+                <th className="px-3 py-2">{tp('colExport')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MATRIX.map((r) => (
+                <tr key={r.app} className="border-b last:border-b-0">
+                  <td className="px-3 py-2 font-medium">{r.app}</td>
+                  {cell(r.imp, r.impKey)}
+                  {cell(r.exp, r.expKey)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+          <span><span className="text-primary">●</span> {tp('cellFull')}</span>
+          <span><span className="text-warning-foreground">◐</span> {tp('cellPartial')}</span>
+          <span><span>○</span> {tp('cellNone')}</span>
+          <span>· {tp('importFrom')}</span>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Converter Anti-Lock-in (§6 Fase 1.4). Prima di OGNI export l'utente vede i
  * limiti reali del canale (§4/§7) in un dialog non ignorabile: si esporta solo
@@ -101,6 +165,8 @@ export function ConverterPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <ConversionMatrix tp={tp} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {FORMATS.map((f) => (

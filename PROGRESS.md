@@ -150,8 +150,16 @@ dedicato. Migrazione schema v4: allargato il vincolo `source` di tracks/playlist
 - [ ] Blocco 2: import Engine DJ (SQLite in chiaro via better-sqlite3, brani +
       playlist; cue sono blob, rimandati)
 - [ ] Blocco 3: import/export Serato (GEOB ID3 via sidecar Python/mutagen)
-- [ ] Blocco 4: "Hub di conversione" UX — matrice import/export con avvisi di
-      perdita dati onesti; completare i writer (cue/beatgrid mancanti)
+- [x] Blocco 2: import Engine DJ (`adapters/engine/engineReader.ts`, SQLite in
+      chiaro via better-sqlite3, reader difensivo con introspezione colonne).
+      Brani, BPM, key 0-23, playlist; cue rimandati (blob). 87/87 test
+- [x] Blocco 3: matrice conversioni bidirezionale in ConverterPage
+      (`ConversionMatrix`): tabella Software × Import/Export con capability
+      ●/◐/○ e note, i18n 4 lingue. Rende esplicito e onesto cosa si converte
+- [ ] Blocco 4: import/export Serato (GEOB ID3 via sidecar Python/mutagen) +
+      export Engine DJ (scrittura m.db nuovo) — completano la bidirezionalità
+- [ ] Nota: gli export writer esistenti (Traktor/VDJ) portano solo hot cue+loop
+      base; beatgrid dettagliata e memory cue color restano da arricchire
 
 ## SCRITTURA DIRETTA MASTER.DB (richiesta utente 03/07/2026) — COMPLETATA
 Ricerca: la cifratura del master.db (Rekordbox 6) è SQLCipher con chiave FISSA
