@@ -12,6 +12,7 @@ import { ingestCollectionXml } from '@core/xmlCollection';
 import { importForeignLibrary } from '@core/foreignImport';
 import { readTraktorNml } from '@adapters/traktor/nmlReader';
 import { readVirtualDjXml } from '@adapters/virtualdj/vdjReader';
+import { readEngineLibrary } from '@adapters/engine/engineReader';
 import { executeBackup, planBackup, BackupOptions, BackupPlan } from '@services/backup/incrementalBackup';
 import { deleteOrphans, findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
 import { generateExcelReport } from '@services/excel/reportGenerator';
@@ -112,13 +113,18 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   });
 
   // ---- import da altri software DJ (pure-Node, sola lettura sul sorgente) ----
-  ipcMain.handle('library:importForeign', async (_e, kind: 'traktor' | 'virtualdj', path: string) => {
+  ipcMain.handle('library:importForeign', async (_e, kind: 'traktor' | 'virtualdj' | 'engine', path: string) => {
     if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
     ingestionRunning = true;
     const progress = new ThrottledProgress(win().webContents);
     const jobId = randomUUID();
     try {
-      const lib = kind === 'traktor' ? readTraktorNml(path) : readVirtualDjXml(path);
+      const lib =
+        kind === 'traktor'
+          ? readTraktorNml(path)
+          : kind === 'engine'
+            ? readEngineLibrary(path)
+            : readVirtualDjXml(path);
       const result = importForeignLibrary(db, lib, (done, total) =>
         progress.update({ jobId, phase: `import-${kind}`, done, total })
       );

@@ -22,7 +22,7 @@ const api = {
     ingestXml: (xmlPath: string) => ipcRenderer.invoke('library:ingestXml', xmlPath),
     ingestMasterdb: (dbPath: string, optionsPath?: string) =>
       ipcRenderer.invoke('library:ingestMasterdb', dbPath, optionsPath),
-    importForeign: (kind: 'traktor' | 'virtualdj', path: string) =>
+    importForeign: (kind: 'traktor' | 'virtualdj' | 'engine', path: string) =>
       ipcRenderer.invoke('library:importForeign', kind, path)
   },
   backup: {

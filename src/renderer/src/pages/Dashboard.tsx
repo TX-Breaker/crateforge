@@ -59,11 +59,14 @@ export function Dashboard() {
     }
   };
 
-  const importForeign = async (kind: 'traktor' | 'virtualdj') => {
-    const ext = kind === 'traktor' ? 'nml' : 'xml';
-    const path = await window.crateforge.dialog.openFile([
-      { name: kind === 'traktor' ? 'Traktor collection' : 'VirtualDJ database', extensions: [ext] }
-    ]);
+  const importForeign = async (kind: 'traktor' | 'virtualdj' | 'engine') => {
+    const filter =
+      kind === 'traktor'
+        ? { name: 'Traktor collection', extensions: ['nml'] }
+        : kind === 'engine'
+          ? { name: 'Engine Library', extensions: ['db'] }
+          : { name: 'VirtualDJ database', extensions: ['xml'] };
+    const path = await window.crateforge.dialog.openFile([filter]);
     if (!path) return;
     setBusy(true);
     setMessage(null);
@@ -180,6 +183,9 @@ export function Dashboard() {
             </Button>
             <Button variant="secondary" onClick={() => importForeign('virtualdj')} disabled={busy}>
               <Import /> {tp('foreignVirtualdj')}
+            </Button>
+            <Button variant="secondary" onClick={() => importForeign('engine')} disabled={busy}>
+              <Import /> {tp('foreignEngine')}
             </Button>
           </div>
         </CardContent>

@@ -43,6 +43,7 @@ const pages: Record<Locale, PageDict> = {
       foreignDesc: 'Porta in CrateForge una libreria Traktor o VirtualDJ (sola lettura sul file di origine). Da qui la converti verso Rekordbox e gli altri.',
       foreignTraktor: 'Importa collection Traktor (.nml)',
       foreignVirtualdj: 'Importa database VirtualDJ (.xml)',
+      foreignEngine: 'Importa Engine DJ (m.db)',
       foreignOk: 'Importati {tracks} brani, {playlists} playlist, {cues} cue.',
       foreignErr: 'Importazione non riuscita: {msg}'
     },
@@ -488,6 +489,7 @@ const pages: Record<Locale, PageDict> = {
       foreignDesc: 'Bring a Traktor or VirtualDJ library into CrateForge (read-only on the source file). From here you convert it to Rekordbox and the others.',
       foreignTraktor: 'Import Traktor collection (.nml)',
       foreignVirtualdj: 'Import VirtualDJ database (.xml)',
+      foreignEngine: 'Import Engine DJ (m.db)',
       foreignOk: 'Imported {tracks} tracks, {playlists} playlists, {cues} cues.',
       foreignErr: 'Import failed: {msg}'
     },
@@ -933,6 +935,7 @@ const pages: Record<Locale, PageDict> = {
       foreignDesc: 'Amenez une bibliothèque Traktor ou VirtualDJ dans CrateForge (lecture seule sur le fichier source). De là vous la convertissez vers Rekordbox et les autres.',
       foreignTraktor: 'Importer la collection Traktor (.nml)',
       foreignVirtualdj: 'Importer la base VirtualDJ (.xml)',
+      foreignEngine: 'Importer Engine DJ (m.db)',
       foreignOk: '{tracks} titres, {playlists} playlists, {cues} cues importés.',
       foreignErr: "Échec de l'import : {msg}"
     },
@@ -1378,6 +1381,7 @@ const pages: Record<Locale, PageDict> = {
       foreignDesc: 'Bring eine Traktor- oder VirtualDJ-Bibliothek in CrateForge (nur lesend auf der Quelldatei). Von hier konvertierst du sie nach Rekordbox und zu den anderen.',
       foreignTraktor: 'Traktor-Collection importieren (.nml)',
       foreignVirtualdj: 'VirtualDJ-Datenbank importieren (.xml)',
+      foreignEngine: 'Engine DJ importieren (m.db)',
       foreignOk: '{tracks} Titel, {playlists} Playlists, {cues} Cues importiert.',
       foreignErr: 'Import fehlgeschlagen: {msg}'
     },
