@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { migrate } from './schema';
+import type { ForeignSource } from './foreignImport';
+
+/** Tutti i valori possibili di tracks.source (dal v4 non più vincolati in DB). */
+export type TrackSource = 'masterdb' | 'xml' | ForeignSource;
 
 /**
  * Apre (creandolo se manca) il database UDM in chiaro.
@@ -22,7 +26,7 @@ export function openUdm(udmPath: string): BetterSqlite3.Database {
 
 export interface TrackRow {
   id: number;
-  source: 'masterdb' | 'xml';
+  source: TrackSource;
   source_id: string | null;
   title: string | null;
   artist: string | null;
@@ -41,6 +45,7 @@ export interface TrackRow {
   needs_review: number;
   review_reason: string | null;
   acoustic_id: string | null;
+  created_at: string;
 }
 
 export interface PageQuery {
@@ -55,8 +60,12 @@ export function getTracksPage(db: BetterSqlite3.Database, q: PageQuery): { rows:
   const where: string[] = [];
   const params: Record<string, unknown> = {};
   if (q.search) {
-    where.push(`(title LIKE :s OR artist LIKE :s OR path LIKE :s)`);
-    params.s = `%${q.search}%`;
+    // Escape dei metacaratteri LIKE (% _ e il backslash stesso): senza, cercare
+    // "100%" o un path con "_" darebbe match spuri da wildcard.
+    where.push(
+      `(title LIKE :s ESCAPE '\\' OR artist LIKE :s ESCAPE '\\' OR path LIKE :s ESCAPE '\\')`
+    );
+    params.s = `%${q.search.replace(/[\\%_]/g, '\\$&')}%`;
   }
   if (q.needsReview !== undefined) {
     where.push(`needs_review = :nr`);

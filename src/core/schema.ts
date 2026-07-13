@@ -230,5 +230,12 @@ export function getSchemaVersion(db: BetterSqlite3.Database): number {
   const row = db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
     | { value: string }
     | undefined;
-  return row ? Number(row.value) : 0;
+  if (!row) return 0;
+  const v = Number(row.value);
+  // Mai degradare in silenzio: un valore corrotto farebbe uscire migrate() da
+  // NaN+1 <= N (falso) senza applicare nulla e senza errore.
+  if (!Number.isInteger(v) || v < 0 || v > SCHEMA_VERSION) {
+    throw new Error(`meta.schema_version non valido (${row.value}): database incompatibile o corrotto.`);
+  }
+  return v;
 }

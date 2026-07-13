@@ -28,6 +28,24 @@ describe('toCamelot', () => {
     expect(toCamelot('B♭')).toBe('6B');
   });
 
+  it('distingue M maiuscola (maggiore) da m minuscola (minore)', () => {
+    expect(toCamelot('AM')).toBe('11B'); // A maggiore, non A minore
+    expect(toCamelot('Am')).toBe('8A'); // A minore
+    expect(toCamelot('CM')).toBe('8B');
+  });
+
+  it('gestisce forme tedesche dur/moll con trattino', () => {
+    expect(toCamelot('C-dur')).toBe('8B');
+    expect(toCamelot('a-moll')).toBe('8A');
+    expect(toCamelot('A-')).toBe('8A'); // trattino = minore
+  });
+
+  it('copre gli enarmonici teorici', () => {
+    expect(toCamelot('Cb')).toBe('1B'); // = B maggiore
+    expect(toCamelot('E#')).toBe('7B'); // = F maggiore
+    expect(toCamelot('B#m')).toBe('5A'); // = C minore
+  });
+
   it('ritorna null su input non valido', () => {
     expect(toCamelot(null)).toBeNull();
     expect(toCamelot('')).toBeNull();

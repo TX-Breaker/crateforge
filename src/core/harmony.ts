@@ -66,9 +66,9 @@ export const BPM_JUMP_THRESHOLD_PCT = 6;
 
 export function checkTransition(
   fromCamelot: string | null,
-  fromBpm: number | null,
+  fromBpm: number | null | undefined,
   toCamelot: string | null,
-  toBpm: number | null
+  toBpm: number | null | undefined
 ): TransitionCheck {
   const flags: TransitionFlag[] = [];
   const a = parseCamelot(fromCamelot);
@@ -81,10 +81,12 @@ export function checkTransition(
     if (!keyOk) flags.push('key-clash');
   }
   let bpmDelta: number | null = null;
-  if (fromBpm === null || toBpm === null || fromBpm <= 0 || toBpm <= 0) {
+  // Check laschi: ai confini IPC i campi opzionali arrivano undefined, non null,
+  // e un NaN passerebbe i confronti con < scivolando via senza flag.
+  if (!Number.isFinite(fromBpm as number) || !Number.isFinite(toBpm as number) || (fromBpm as number) <= 0 || (toBpm as number) <= 0) {
     flags.push('missing-bpm');
   } else {
-    bpmDelta = bpmDeltaPct(fromBpm, toBpm);
+    bpmDelta = bpmDeltaPct(fromBpm as number, toBpm as number);
     if (bpmDelta > BPM_JUMP_THRESHOLD_PCT) flags.push('bpm-jump');
   }
   return { flags, keyOk, bpmDelta };

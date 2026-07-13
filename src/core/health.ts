@@ -36,7 +36,10 @@ export function computeHealth(db: BetterSqlite3.Database): HealthReport {
   if (total === 0) return empty;
 
   const missingBpm = count(db, `SELECT COUNT(*) c FROM tracks WHERE bpm IS NULL OR bpm <= 0`);
-  const missingKey = count(db, `SELECT COUNT(*) c FROM tracks WHERE camelot IS NULL`);
+  const missingKey = count(
+    db,
+    `SELECT COUNT(*) c FROM tracks WHERE camelot IS NULL OR TRIM(camelot) = ''`
+  );
   const missingGenre = count(
     db,
     `SELECT COUNT(*) c FROM tracks WHERE genre IS NULL OR TRIM(genre) = ''`
@@ -59,6 +62,9 @@ export function computeHealth(db: BetterSqlite3.Database): HealthReport {
     .get() as { groups: number; tracks: number };
   const fingerprinted = count(db, `SELECT COUNT(*) c FROM tracks WHERE acoustic_id IS NOT NULL`);
 
+  // Copie in eccesso = tracce nei gruppi meno un rappresentante per gruppo:
+  // una libreria dove ogni brano ha UNA copia non deve azzerare la voce.
+  const excessDup = Math.max(0, dup.tracks - dup.groups);
   // Pesi: BPM e key contano di più (servono per suonare), poi pulizia tag.
   const parts: { ok: number; weight: number }[] = [
     { ok: (total - missingBpm) / total, weight: 25 },
@@ -66,7 +72,7 @@ export function computeHealth(db: BetterSqlite3.Database): HealthReport {
     { ok: (total - missingGenre) / total, weight: 15 },
     { ok: (total - missingYear) / total, weight: 10 },
     { ok: (total - needsReview) / total, weight: 15 },
-    { ok: (total - dup.tracks) / total, weight: 10 }
+    { ok: (total - excessDup) / total, weight: 10 }
   ];
   const score = Math.round(
     parts.reduce((s, p) => s + p.ok * p.weight, 0) / parts.reduce((s, p) => s + p.weight, 0) * 100

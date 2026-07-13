@@ -6,12 +6,15 @@
 const CAMELOT_MAJOR: Record<string, string> = {
   B: '1B', 'F#': '2B', GB: '2B', DB: '3B', 'C#': '3B', AB: '4B', 'G#': '4B',
   EB: '5B', 'D#': '5B', BB: '6B', 'A#': '6B', F: '7B', C: '8B', G: '9B',
-  D: '10B', A: '11B', E: '12B'
+  D: '10B', A: '11B', E: '12B',
+  // enarmonici teorici rari ma validi
+  CB: '1B', FB: '12B', 'E#': '7B', 'B#': '8B'
 };
 const CAMELOT_MINOR: Record<string, string> = {
   'G#': '1A', AB: '1A', 'D#': '2A', EB: '2A', 'A#': '3A', BB: '3A', F: '4A',
   C: '5A', G: '6A', D: '7A', A: '8A', E: '9A', B: '10A', 'F#': '11A',
-  GB: '11A', 'C#': '12A', DB: '12A'
+  GB: '11A', 'C#': '12A', DB: '12A',
+  CB: '10A', FB: '9A', 'E#': '4A', 'B#': '5A'
 };
 
 const CAMELOT_RE = /^([1-9]|1[0-2])\s*([AB])$/i;
@@ -37,11 +40,15 @@ export function toCamelot(key: string | null | undefined): string | null {
   const m = raw.match(/^([A-Ga-g])\s*([#♯b♭]?)\s*(.*)$/);
   if (!m) return null;
   const note = (m[1].toUpperCase() + normalizeAccidental(m[2])).toUpperCase();
-  const modeStr = m[3].trim().toLowerCase();
+  const modeRaw = m[3].trim();
+  // Convenzione 'M' maiuscola = maggiore / 'm' minuscola = minore (alcuni tagger).
+  const isMajorExact = modeRaw === 'M';
+  const modeStr = modeRaw.toLowerCase();
   const isMinor =
-    modeStr === 'm' || modeStr.startsWith('min') || modeStr === 'moll' || modeStr === '-';
+    !isMajorExact &&
+    (modeStr === 'm' || modeStr === '-' || modeStr.startsWith('min') || modeStr.endsWith('moll'));
   const isMajor =
-    modeStr === '' || modeStr === 'maj' || modeStr.startsWith('maj') || modeStr === 'dur';
+    isMajorExact || modeStr === '' || modeStr.startsWith('maj') || modeStr.endsWith('dur');
   if (isMinor) return CAMELOT_MINOR[note] ?? null;
   if (isMajor) return CAMELOT_MAJOR[note] ?? null;
   return null;

@@ -75,4 +75,23 @@ describe('getTracksPage (paginazione: mai tutta la libreria)', () => {
     const search = getTracksPage(db, { offset: 0, limit: 100, search: 'Track 07' });
     expect(search.total).toBe(1);
   });
+
+  it('escape dei metacaratteri LIKE: % e _ non fanno da wildcard', () => {
+    const db = memDb();
+    const ins = db.prepare(`INSERT INTO tracks (source, source_id, title) VALUES ('xml', ?, ?)`);
+    ins.run('1', '100% Pure');
+    ins.run('2', '1005 Something'); // non deve matchare "100%" se % fosse wildcard
+    ins.run('3', 'a_b track');
+    ins.run('4', 'axb track'); // _ come wildcard matcherebbe "a_b"
+    expect(getTracksPage(db, { offset: 0, limit: 100, search: '100%' }).total).toBe(1);
+    expect(getTracksPage(db, { offset: 0, limit: 100, search: 'a_b' }).total).toBe(1);
+  });
+});
+
+describe('getSchemaVersion validazione', () => {
+  it('lancia su schema_version corrotto invece di degradare in silenzio', () => {
+    const db = memDb();
+    db.prepare(`UPDATE meta SET value = 'boh' WHERE key = 'schema_version'`).run();
+    expect(() => getSchemaVersion(db)).toThrow(/schema_version/);
+  });
 });

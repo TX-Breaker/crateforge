@@ -62,6 +62,14 @@ describe('checkTransition', () => {
     expect(r.keyOk).toBeNull();
     expect(r.bpmDelta).toBeNull();
   });
+
+  it('bpm undefined/NaN al confine IPC: missing-bpm, non falso OK', () => {
+    const r = checkTransition('8A', undefined, '9A', 130);
+    expect(r.flags).toContain('missing-bpm');
+    expect(r.bpmDelta).toBeNull();
+    const r2 = checkTransition('8A', Number.NaN, '9A', 130);
+    expect(r2.flags).toContain('missing-bpm');
+  });
 });
 
 describe('bpmDeltaPct', () => {
