@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { createReadStream } from 'fs';
 import { copyFile, mkdir, readdir, stat, unlink } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname, join, normalize } from 'path';
 
 export const AUDIO_EXTENSIONS = new Set([
   '.mp3', '.wav', '.aiff', '.aif', '.flac', '.m4a', '.aac', '.ogg', '.alac'
@@ -72,4 +72,21 @@ export async function copyWithVerify(src: string, dest: string): Promise<string>
 
 export function timestampDir(): string {
   return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+}
+
+/**
+ * Chiave canonica di un percorso per confronti robusti. Normalizza a NFC:
+ * su macOS il filesystem usa NFD, ma Rekordbox/altri DB memorizzano NFC —
+ * senza questo, ogni traccia con accenti (Beyoncé, Über) risulta falso orfano
+ * e, combinata con quarantena/delete, l'utente cancella file validi.
+ * Case-insensitive (Windows/macOS default). NON per la persistenza, solo per
+ * il matching.
+ */
+export function canonicalizePath(p: string): string {
+  return normalize(p).normalize('NFC').toLowerCase();
+}
+
+/** Come sopra ma sul solo nome file (per il matching del relocator). */
+export function canonicalizeName(name: string): string {
+  return name.normalize('NFC').toLowerCase();
 }

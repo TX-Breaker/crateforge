@@ -1,7 +1,8 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { mkdir, rename, rm, stat } from 'fs/promises';
-import { basename, join, normalize } from 'path';
-import { AUDIO_EXTENSIONS, walkFiles } from '../fsutil';
+import { existsSync } from 'fs';
+import { basename, join } from 'path';
+import { AUDIO_EXTENSIONS, canonicalizePath, walkFiles } from '../fsutil';
 import { logOperation } from '@core/udm';
 
 /**
@@ -24,19 +25,17 @@ export interface OrphanScanResult {
   reclaimableBytes: number;
 }
 
-function canon(p: string): string {
-  return normalize(p).toLowerCase();
-}
-
 export async function findOrphans(
   db: BetterSqlite3.Database,
   musicDir: string,
   onProgress?: (scanned: number) => void
 ): Promise<OrphanScanResult> {
   // Path noti dal DB: set in RAM di sole stringhe (decine di MB max, non oggetti).
+  // canonicalizePath normalizza a NFC: senza, i brani con accenti su macOS
+  // (disco NFD vs DB NFC) sarebbero tutti falsi orfani → rischio cancellazione.
   const known = new Set<string>();
   for (const row of db.prepare(`SELECT path FROM tracks WHERE path IS NOT NULL`).iterate()) {
-    known.add(canon((row as { path: string }).path));
+    known.add(canonicalizePath((row as { path: string }).path));
   }
 
   const orphans: OrphanFile[] = [];
@@ -44,7 +43,7 @@ export async function findOrphans(
   let reclaimable = 0;
   for await (const file of walkFiles(musicDir, AUDIO_EXTENSIONS)) {
     scanned++;
-    if (!known.has(canon(file.path))) {
+    if (!known.has(canonicalizePath(file.path))) {
       orphans.push({ path: file.path, size: file.size, mtimeMs: file.mtimeMs });
       reclaimable += file.size;
     }
@@ -87,22 +86,23 @@ export async function quarantineOrphans(
   await mkdir(quarantineDir, { recursive: true });
   for (const f of files) {
     try {
+      // Trova un dest LIBERO prima di spostare: `rename` sovrascrive la
+      // destinazione, quindi due orfani con lo stesso nome file si
+      // distruggerebbero a vicenda (il ramo EEXIST non scatta sul rename).
       let dest = join(quarantineDir, basename(f));
       let n = 1;
-      while (n < 1000) {
-        try {
-          await rename(f, dest);
-          break;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-            dest = join(quarantineDir, `${n++}_${basename(f)}`);
-          } else if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-            // volume diverso: copia + elimina non è "move" atomico → rifiuta, più sicuro
-            throw new Error('File su un volume diverso dalla quarantena: operazione saltata');
-          } else {
-            throw err;
-          }
+      while (existsSync(dest)) {
+        if (n >= 1000) throw new Error('Troppi file omonimi in quarantena: operazione saltata');
+        dest = join(quarantineDir, `${n++}_${basename(f)}`);
+      }
+      try {
+        await rename(f, dest);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+          // volume diverso: copia + elimina non è "move" atomico → rifiuta, più sicuro
+          throw new Error('File su un volume diverso dalla quarantena: operazione saltata');
         }
+        throw err;
       }
       moved++;
       logOperation(db, 'orphans.quarantine', f, 'ok', `→ ${dest}`);

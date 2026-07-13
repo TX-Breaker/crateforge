@@ -5,6 +5,7 @@ import { join } from 'path';
 import Database from 'better-sqlite3';
 import { migrate } from '@core/schema';
 import { deleteOrphans, findOrphans, quarantineOrphans } from '@services/orphans/orphanFinder';
+import { canonicalizeName, canonicalizePath } from '@services/fsutil';
 
 let tmp: string;
 let db: InstanceType<typeof Database>;
@@ -48,7 +49,36 @@ describe('findOrphans (diff disco vs libreria)', () => {
   });
 });
 
+describe('canonicalizePath / canonicalizeName (NFC, rischio dati macOS)', () => {
+  it('NFC e NFD della stessa stringa collassano sulla stessa chiave', () => {
+    const nfc = 'Café.mp3'; // e precomposto (NFC)
+    const nfd = 'Café.mp3'; // e + accento combinante (NFD)
+    expect(nfc).not.toBe(nfd); // byte diversi
+    expect(canonicalizeName(nfc)).toBe(canonicalizeName(nfd));
+    expect(canonicalizePath('C:/M/' + nfc)).toBe(canonicalizePath('C:/M/' + nfd));
+  });
+});
+
 describe('quarantineOrphans', () => {
+  it('due orfani omonimi non si sovrascrivono (rename overwrite)', async () => {
+    const music = join(tmp, 'music');
+    mkdirSync(join(music, 'a'), { recursive: true });
+    mkdirSync(join(music, 'b'), { recursive: true });
+    writeFileSync(join(music, 'a', 'dup.mp3'), 'AAA');
+    writeFileSync(join(music, 'b', 'dup.mp3'), 'BBB');
+    const r = await quarantineOrphans(
+      db,
+      [join(music, 'a', 'dup.mp3'), join(music, 'b', 'dup.mp3')],
+      join(tmp, 'q'),
+      false
+    );
+    expect(r.moved).toBe(2);
+    // Entrambi presenti in quarantena, il secondo con prefisso: nessuno perso.
+    const q = join(r.quarantineDir);
+    expect(existsSync(join(q, 'dup.mp3'))).toBe(true);
+    expect(existsSync(join(q, '1_dup.mp3'))).toBe(true);
+  });
+
   it('dry-run non tocca nulla (§3.6)', async () => {
     const music = makeMusicDir();
     const orphan = join(music, 'orphan1.mp3');

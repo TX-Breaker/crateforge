@@ -1,7 +1,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'fs';
 import { basename } from 'path';
-import { AUDIO_EXTENSIONS, walkFiles } from '../fsutil';
+import { AUDIO_EXTENSIONS, canonicalizeName, walkFiles } from '../fsutil';
 import type { TrackRow } from '@core/udm';
 
 /**
@@ -54,7 +54,7 @@ export async function matchByFilename(
   let scanned = 0;
   for await (const file of walkFiles(newRoot, AUDIO_EXTENSIONS)) {
     scanned++;
-    const name = basename(file.path).toLowerCase();
+    const name = canonicalizeName(basename(file.path));
     const list = byName.get(name);
     if (list) list.push(file.path);
     else byName.set(name, [file.path]);
@@ -62,7 +62,7 @@ export async function matchByFilename(
   }
 
   return broken.map(({ track, oldPath }) => {
-    const candidates = byName.get(basename(oldPath).toLowerCase()) ?? [];
+    const candidates = byName.get(canonicalizeName(basename(oldPath))) ?? [];
     return {
       track,
       oldPath,
