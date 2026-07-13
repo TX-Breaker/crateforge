@@ -21,7 +21,9 @@ export class ThrottledProgress {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
-    private readonly webContents: WebContents,
+    // Può essere undefined se non c'è finestra (es. macOS ad app viva senza
+    // finestra): in quel caso gli eventi vengono silenziosamente ignorati.
+    private readonly webContents: WebContents | undefined,
     private readonly channel = 'job:progress'
   ) {}
 
@@ -53,7 +55,7 @@ export class ThrottledProgress {
   private send(payload: ProgressPayload): void {
     this.pending = null;
     this.lastSent = Date.now();
-    if (!this.webContents.isDestroyed()) {
+    if (this.webContents && !this.webContents.isDestroyed()) {
       this.webContents.send(this.channel, payload);
     }
   }

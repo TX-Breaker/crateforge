@@ -28,14 +28,16 @@ export function SettingsPage() {
     window.crateforge.settings.get('discogsToken').then((v) => setDiscogsToken(v ?? ''));
   }, []);
 
-  const toggleDirectWrites = (v: boolean) => {
-    setDirectWrites(v);
-    window.crateforge.settings.set('directWrites', v ? '1' : '0');
+  // I gate passano dal canale sicuro con conferma nativa nel main: se l'utente
+  // annulla il dialog nativo, lo stato torna com'era.
+  const toggleDirectWrites = async (v: boolean) => {
+    const r = await window.crateforge.security.setGate('directWrites', v);
+    setDirectWrites(r.enabled);
   };
 
-  const toggleMasterDbWrites = (v: boolean) => {
-    setMasterDbWrites(v);
-    window.crateforge.settings.set('masterDbWrites', v ? '1' : '0');
+  const toggleMasterDbWrites = async (v: boolean) => {
+    const r = await window.crateforge.security.setGate('masterDbWrites', v);
+    setMasterDbWrites(r.enabled);
   };
 
   const doDownloadKey = async () => {

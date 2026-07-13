@@ -45,17 +45,63 @@ import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
  *  - progressi SEMPRE via ThrottledProgress (§2);
  *  - un solo job di ingestion alla volta (serializza i writer sull'UDM).
  */
-export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
+export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => void {
   let ingestionRunning = false;
   let currentCancel: (() => void) | null = null;
   // Piani di backup tenuti nel main: al renderer va solo il riepilogo (§2, no bulk data su IPC).
   const backupPlans = new Map<string, { plan: BackupPlan; opts: BackupOptions }>();
+  // Risultati di scansione orfani tenuti nel main: l'eliminazione può agire solo
+  // sui path effettivamente trovati da una scansione, non su path arbitrari
+  // decisi dal renderer (difesa in profondità sull'azione distruttiva).
+  const orphanScans = new Map<string, Set<string>>();
 
-  const win = (): BrowserWindow => BrowserWindow.getAllWindows()[0];
+  // Preferisce la finestra a fuoco, poi la prima disponibile; mai undefined
+  // dereferenziato: i call-site usano win()?.webContents (ThrottledProgress
+  // tollera undefined) e per i dialog c'è dialogParent().
+  const win = (): BrowserWindow | undefined =>
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const wc = (): BrowserWindow['webContents'] | undefined => win()?.webContents;
+
+  // Chiavi di sicurezza che NON possono essere scritte dal canale generico:
+  // sono i gate delle scritture (§3), altrimenti un renderer compromesso le
+  // attiverebbe da solo via settings:set e poi eseguirebbe azioni distruttive.
+  const GATE_KEYS = new Set(['directWrites', 'masterDbWrites']);
 
   // ---- settings / stato ----
   ipcMain.handle('settings:get', (_e, key: string) => getSetting(db, key));
-  ipcMain.handle('settings:set', (_e, key: string, value: string) => setSetting(db, key, value));
+  ipcMain.handle('settings:set', (_e, key: string, value: string) => {
+    if (GATE_KEYS.has(key)) {
+      throw new Error(`Il setting "${key}" non è modificabile da questo canale.`);
+    }
+    return setSetting(db, key, value);
+  });
+
+  // Attivazione/disattivazione dei gate: canale dedicato con conferma NATIVA
+  // nel main (dialog non falsificabile dal renderer) prima di scrivere.
+  ipcMain.handle('security:setGate', async (e, key: string, enable: boolean) => {
+    if (!GATE_KEYS.has(key)) throw new Error('Chiave di gate non riconosciuta.');
+    if (enable) {
+      const parent = BrowserWindow.fromWebContents(e.sender) ?? win();
+      const opts = {
+        type: 'warning' as const,
+        buttons: ['Annulla', 'Attiva'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Conferma attivazione',
+        message:
+          key === 'masterDbWrites'
+            ? 'Attivare la scrittura DIRETTA nel database di Rekordbox? Chiudi Rekordbox prima di usarla.'
+            : 'Attivare le scritture dirette sui file originali (eliminazione orfani, tag ID3)?'
+      };
+      const r = parent
+        ? await dialog.showMessageBox(parent, opts)
+        : await dialog.showMessageBox(opts);
+      if (r.response !== 1) return { ok: false, enabled: getSetting(db, key) === '1' };
+    }
+    setSetting(db, key, enable ? '1' : '0');
+    logOperation(db, 'security.gate', key, 'ok', enable ? 'attivato' : 'disattivato');
+    return { ok: true, enabled: enable };
+  });
   ipcMain.handle('sidecar:check', () => checkSidecar());
 
   // Fallback chiave Rekordbox (§4.3) in-app: nessun terminale, nessun sito.
@@ -78,7 +124,12 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   // ---- libreria (paginata) ----
   ipcMain.handle('library:page', (_e, q) => getTracksPage(db, q));
   ipcMain.handle('library:pageByPlaylist', (_e, playlistId: number, offset: number, limit: number) =>
-    getPlaylistTracksPage(db, playlistId, offset, Math.min(limit, 200))
+    getPlaylistTracksPage(
+      db,
+      playlistId,
+      Math.max(0, Math.floor(Number(offset)) || 0),
+      Math.max(1, Math.min(Math.floor(Number(limit)) || 50, 200))
+    )
   );
   ipcMain.handle('library:stats', () => ({
     tracks: (db.prepare('SELECT COUNT(*) c FROM tracks').get() as { c: number }).c,
@@ -95,7 +146,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   ipcMain.handle('library:ingestXml', async (_e, xmlPath: string) => {
     if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
     ingestionRunning = true;
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     try {
       const result = ingestCollectionXml(db, xmlPath, (done, total) =>
@@ -116,7 +167,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   ipcMain.handle('library:importForeign', async (_e, kind: 'traktor' | 'virtualdj' | 'engine', path: string) => {
     if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
     ingestionRunning = true;
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     try {
       const lib =
@@ -156,7 +207,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
         };
       }
       ingestionRunning = true;
-      const progress = new ThrottledProgress(win().webContents);
+      const progress = new ThrottledProgress(wc());
       const jobId = randomUUID();
       const args = ['--master-db', masterDbPath];
       if (optionsJsonPath) args.push('--options-json', optionsJsonPath);
@@ -210,7 +261,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // ---- backup ----
   ipcMain.handle('backup:plan', async (_e, opts: BackupOptions) => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     const plan = await planBackup({
       ...opts,
@@ -235,7 +286,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     const entry = backupPlans.get(planId);
     if (!entry) throw new Error('Piano di backup scaduto: rilancia l\'anteprima.');
     backupPlans.delete(planId);
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     const result = await executeBackup(entry.plan, {
       ...entry.opts,
@@ -254,7 +305,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // ---- orfani ----
   ipcMain.handle('orphans:scan', async (_e, musicDir: string) => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     const result = await findOrphans(db, musicDir, (scanned) =>
       progress.update({ jobId, phase: 'orphan-scan', done: scanned, total: 0 })
@@ -266,9 +317,17 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
       total: result.scannedFiles
     });
     logOperation(db, 'orphans.scan', musicDir, 'ok', `${result.orphans.length} orfani`);
+    // Registra i path trovati sotto uno scanId; l'eliminazione dovrà citarlo.
+    const scanId = randomUUID();
+    orphanScans.set(scanId, new Set(result.orphans.map((o) => o.path)));
+    // Tieni solo l'ultima scansione (evita leak lento su molte scansioni).
+    if (orphanScans.size > 3) {
+      const oldest = orphanScans.keys().next().value;
+      if (oldest) orphanScans.delete(oldest);
+    }
     // Lista orfani: può essere lunga, il renderer la pagina lato UI (array di
     // sole stringhe+numeri, non oggetti pesanti).
-    return result;
+    return { ...result, scanId };
   });
 
   ipcMain.handle(
@@ -279,18 +338,27 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // Eliminazione definitiva: SOLO con il setting "scritture dirette" attivo
   // (fase intermedia). Il gate è anche qui nel main, non solo in UI.
-  ipcMain.handle('orphans:delete', (_e, files: string[], dryRun: boolean) => {
+  ipcMain.handle('orphans:delete', (_e, scanId: string, files: string[], dryRun: boolean) => {
     if (getSetting(db, 'directWrites') !== '1') {
       throw new Error(
         'Le scritture dirette sono disattivate. Attivale in Impostazioni → Esperto.'
       );
     }
-    return deleteOrphans(db, files, dryRun);
+    const scanned = orphanScans.get(scanId);
+    if (!scanned) {
+      throw new Error('Scansione scaduta o non trovata: rilancia la ricerca degli orfani.');
+    }
+    // Elimina SOLO i path realmente trovati dalla scansione citata.
+    const safe = files.filter((f) => scanned.has(f));
+    if (safe.length !== files.length) {
+      throw new Error('Elenco file non coerente con la scansione: operazione annullata.');
+    }
+    return deleteOrphans(db, safe, dryRun);
   });
 
   // ---- report excel ----
   ipcMain.handle('report:generate', async (_e, opts) => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     const result = await generateExcelReport(db, {
       ...opts,
@@ -335,7 +403,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     }));
   });
   ipcMain.handle('relocator:matchAndWrite', async (_e, newRoot: string, outPath: string | null) => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     const broken = findBrokenTracks(db);
     const matches: RelocationMatch[] = await matchByFilename(broken, newRoot, (scanned) =>
@@ -361,7 +429,10 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // ---- oplog ----
   ipcMain.handle('oplog:list', (_e, limit = 200) =>
-    db.prepare('SELECT * FROM oplog ORDER BY id DESC LIMIT ?').all(Math.min(limit, 1000))
+    // Clamp completo: un limit negativo diventerebbe LIMIT -1 = nessun limite.
+    db.prepare('SELECT * FROM oplog ORDER BY id DESC LIMIT ?').all(
+      Math.max(1, Math.min(Math.floor(Number(limit)) || 200, 1000))
+    )
   );
 
   // Export del registro in testo leggibile (§3.7), scritto a blocchi.
@@ -403,7 +474,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
     phase: string,
     args: string[]
   ): Promise<{ ok: boolean; data?: Record<string, unknown>; message?: string }> => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     let doneData: Record<string, unknown> | undefined;
     let lastError: string | null = null;
@@ -540,7 +611,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
 
   // ---- auto-tagger (Fase 2.4): solo query testuali, mai upload audio ----
   ipcMain.handle('tagger:propose', async (_e, limit?: number, provider?: TagProvider) => {
-    const progress = new ThrottledProgress(win().webContents);
+    const progress = new ThrottledProgress(wc());
     const jobId = randomUUID();
     try {
       const r = await proposeTags(db, {
@@ -793,16 +864,37 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): void {
   });
 
   // ---- dialoghi file ----
-  ipcMain.handle('dialog:openFile', async (_e, filters?: { name: string; extensions: string[] }[]) => {
-    const r = await dialog.showOpenDialog(win(), { properties: ['openFile'], filters });
+  // Il parent va preso dal sender (finestra chiamante), con fallback su win();
+  // se manca del tutto si apre un dialog senza parent (comunque valido).
+  const dialogParent = (e: Electron.IpcMainInvokeEvent): BrowserWindow | undefined =>
+    BrowserWindow.fromWebContents(e.sender) ?? win();
+  ipcMain.handle('dialog:openFile', async (e, filters?: { name: string; extensions: string[] }[]) => {
+    const parent = dialogParent(e);
+    const opts = { properties: ['openFile'] as ('openFile')[], filters };
+    const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
     return r.canceled ? null : r.filePaths[0];
   });
-  ipcMain.handle('dialog:openDirectory', async () => {
-    const r = await dialog.showOpenDialog(win(), { properties: ['openDirectory'] });
+  ipcMain.handle('dialog:openDirectory', async (e) => {
+    const parent = dialogParent(e);
+    const opts = { properties: ['openDirectory'] as ('openDirectory')[] };
+    const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
     return r.canceled ? null : r.filePaths[0];
   });
-  ipcMain.handle('dialog:saveFile', async (_e, defaultName: string, filters?: { name: string; extensions: string[] }[]) => {
-    const r = await dialog.showSaveDialog(win(), { defaultPath: defaultName, filters });
+  ipcMain.handle('dialog:saveFile', async (e, defaultName: string, filters?: { name: string; extensions: string[] }[]) => {
+    const parent = dialogParent(e);
+    const opts = { defaultPath: defaultName, filters };
+    const r = parent ? await dialog.showSaveDialog(parent, opts) : await dialog.showSaveDialog(opts);
     return r.canceled ? null : r.filePath;
   });
+
+  // Cleanup per la chiusura ordinata (index.ts, before-quit): ferma il daemon
+  // di sorveglianza e annulla un eventuale job sidecar in corso.
+  return () => {
+    try {
+      daemon.stop();
+    } catch {
+      /* best-effort */
+    }
+    currentCancel?.();
+  };
 }

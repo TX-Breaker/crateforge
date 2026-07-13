@@ -21,6 +21,7 @@ interface ScanResult {
   scannedFiles: number;
   knownTracks: number;
   reclaimableBytes: number;
+  scanId: string;
 }
 
 const PAGE_SIZE = 100;
@@ -128,8 +129,9 @@ export function OrphansPage() {
     setBusy(true);
     setError(null);
     try {
+      if (!result) return;
       const files = [...selected];
-      const r = await window.crateforge.orphans.remove(files, false);
+      const r = await window.crateforge.orphans.remove(result.scanId, files, false);
       setOutcome(
         tp('outDeleted', { n: r.deleted, size: formatBytes(r.freedBytes) }) +
           (r.failed.length ? tp('outDelFail', { n: r.failed.length }) : '')

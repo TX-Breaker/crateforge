@@ -9,6 +9,12 @@ const api = {
     get: (key: string) => ipcRenderer.invoke('settings:get', key) as Promise<string | null>,
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
   },
+  security: {
+    // Attiva/disattiva un gate (directWrites/masterDbWrites) con conferma
+    // nativa nel main. Le chiavi di gate NON passano da settings.set.
+    setGate: (key: 'directWrites' | 'masterDbWrites', enable: boolean) =>
+      ipcRenderer.invoke('security:setGate', key, enable) as Promise<{ ok: boolean; enabled: boolean }>
+  },
   sidecar: {
     check: () => ipcRenderer.invoke('sidecar:check'),
     downloadKey: () => ipcRenderer.invoke('sidecar:downloadKey')
@@ -33,8 +39,8 @@ const api = {
     scan: (musicDir: string) => ipcRenderer.invoke('orphans:scan', musicDir),
     quarantine: (files: string[], root: string, dryRun: boolean) =>
       ipcRenderer.invoke('orphans:quarantine', files, root, dryRun),
-    remove: (files: string[], dryRun: boolean) =>
-      ipcRenderer.invoke('orphans:delete', files, dryRun)
+    remove: (scanId: string, files: string[], dryRun: boolean) =>
+      ipcRenderer.invoke('orphans:delete', scanId, files, dryRun)
   },
   report: {
     generate: (opts: unknown) => ipcRenderer.invoke('report:generate', opts),
