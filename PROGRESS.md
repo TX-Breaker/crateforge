@@ -133,6 +133,33 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (contenuto intatto, hash uguale), file inesistente (errore pulito).
       Suite: 72/72 verdi
 
+## HARDENING DA ANALISI CODICE (workflow multi-agente, 13-14/07/2026) — 3 BLOCCHI
+Il workflow di analisi ha mappato i 7 sottosistemi (i ricercatori formati sono
+falliti per limite sessione; ricerca fatta inline). Applicati i fix prioritari:
+- [x] Blocco A (core): camelot M/m maiuscola-minuscola + dur/moll + enarmonici;
+      harmony check laschi su BPM undefined/NaN; getSchemaVersion lancia su
+      valore corrotto; TrackRow.source = TrackSource condiviso + created_at;
+      escape metacaratteri LIKE; health missingKey con TRIM + score duplicati
+      solo sulle copie in eccesso. +6 test
+- [x] Blocco B (main/sicurezza): gate non falsificabili (settings:set rifiuta
+      directWrites/masterDbWrites, canale security:setGate con conferma nativa);
+      orphans:delete solo sui path di una scansione reale (scanId nel main);
+      win() non crasha (focused??first, ThrottledProgress tollera undefined);
+      finestra hardened (sandbox true, openExternal http/https, will-navigate,
+      single-instance, openUdm try/catch+showErrorBox, before-quit dispose);
+      clamp limit negativi. Smoke ok
+- [x] Blocco C (adapters): Traktor MUSICAL_KEY intero 0-23 (era testo, key persa)
+      + traktorKeys.ts condiviso; nmlReader esclude TYPE 1/2/3; pathToLocation
+      non codifica il drive letter (Rekordbox non risolveva su Windows);
+      kindFromPath (no piu' FLAC/WAV come MP3); vdjWriter Infos SongLength;
+      engineReader ordine playlist via catena nextEntityId. +test adapters +
+      test parita i18n (63 check). 162/162 test totali
+- [ ] Follow-up non ancora fatti (da analisi): coda job unica withJobLock per
+      concorrenza UDM Node/Python; sidecar payload via file (argv >32K su Win);
+      sidecar tree-kill su cancel; ingest cue dal master.db; test relocator;
+      CI gate (pull_request+typecheck+coverage); nmlWriter gerarchia cartelle;
+      schema v5 rating/color/comment + tabella beatgrids; dedup cross-source
+
 ## CONVERSIONE BIDIREZIONALE (richiesta utente 03/07/2026) — IN CORSO
 Obiettivo: import DA ogni software DJ verso l'UDM (hub) + export verso ogni
 software. Oggi export c'era (Rekordbox XML, Traktor NML, VirtualDJ XML); mancava
