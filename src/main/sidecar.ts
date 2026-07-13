@@ -4,6 +4,8 @@ import { app } from 'electron';
 import { join } from 'path';
 import { createInterface } from 'readline';
 
+const IS_WIN = process.platform === 'win32';
+
 /**
  * Gestione del sidecar Python (pyrekordbox + fpcalc).
  *
@@ -96,15 +98,27 @@ export function runSidecar(opts: SidecarRunOptions): SidecarHandle {
   const child = spawn(cmd, args, {
     cwd: join(check.binaryPath, '..'),
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
+    windowsHide: true,
+    // POSIX: il figlio diventa capo del proprio process group così cancel()
+    // può uccidere l'INTERO albero (fpcalc/demucs figli), non solo il padre.
+    detached: !IS_WIN
   });
 
   const rl = createInterface({ input: child.stdout });
   rl.on('line', (line) => {
     if (!line.trim()) return;
+    // Parse e dispatch separati: se onEvent lancia, non deve essere scambiato
+    // per un errore di parse e ri-emesso come log (doppio processamento).
+    let ev: unknown;
     try {
-      opts.onEvent(JSON.parse(line) as SidecarEvent);
+      ev = JSON.parse(line);
     } catch {
+      opts.onEvent({ type: 'log', message: line });
+      return;
+    }
+    if (ev && typeof ev === 'object' && typeof (ev as SidecarEvent).type === 'string') {
+      opts.onEvent(ev as SidecarEvent);
+    } else {
       opts.onEvent({ type: 'log', message: line });
     }
   });
@@ -131,8 +145,28 @@ export function runSidecar(opts: SidecarRunOptions): SidecarHandle {
   });
 
   return {
+    // Annulla uccidendo l'intero albero di processi, con escalation.
     cancel: () => {
-      child.kill();
+      const pid = child.pid;
+      if (pid === undefined) return;
+      if (IS_WIN) {
+        // taskkill /T uccide anche i figli (fpcalc/demucs).
+        spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+      } else {
+        try {
+          process.kill(-pid, 'SIGTERM'); // -pid = tutto il process group
+        } catch {
+          child.kill('SIGTERM');
+        }
+        // Escalation a SIGKILL se dopo 3s non è morto.
+        setTimeout(() => {
+          try {
+            process.kill(-pid, 'SIGKILL');
+          } catch {
+            /* già morto */
+          }
+        }, 3000);
+      }
     },
     finished
   };
