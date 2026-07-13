@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { readFileSync } from 'fs';
 import type { ForeignLibrary, NormCue, NormPlaylist, NormTrack } from '@core/foreignImport';
+import { TRAKTOR_KEY } from './traktorKeys';
 
 /**
  * Reader Traktor NML (collection.nml) → modello normalizzato.
@@ -42,7 +43,9 @@ function mapCue(c: Record<string, string>): NormCue | null {
   const len = c['@_LEN'] !== undefined ? Number(c['@_LEN']) : 0;
   const hotcue = c['@_HOTCUE'] !== undefined ? Number(c['@_HOTCUE']) : -1;
   const type = c['@_TYPE'];
-  if (type === '4') return null; // grid marker: è la beatgrid, non un cue utente
+  // TYPE 4 = grid marker (beatgrid); 1/2/3 = fade-in/fade-out/load: non sono
+  // cue utente, escluderli evita cue fantasma ri-esportati verso altri software.
+  if (type === '1' || type === '2' || type === '3' || type === '4') return null;
   const isLoop = type === '5' || len > 0;
   return {
     type: isLoop ? 'loop' : hotcue >= 0 ? 'hot' : 'memory',
@@ -53,14 +56,6 @@ function mapCue(c: Record<string, string>): NormCue | null {
     label: c['@_NAME'] || null
   };
 }
-
-// MUSICAL_KEY VALUE 0..23 (Traktor open-key index) → notazione classica.
-const TRAKTOR_KEY: Record<number, string> = {
-  0: 'C', 1: 'C#', 2: 'D', 3: 'D#', 4: 'E', 5: 'F', 6: 'F#', 7: 'G',
-  8: 'G#', 9: 'A', 10: 'A#', 11: 'B',
-  12: 'Cm', 13: 'C#m', 14: 'Dm', 15: 'D#m', 16: 'Em', 17: 'Fm',
-  18: 'F#m', 19: 'Gm', 20: 'G#m', 21: 'Am', 22: 'A#m', 23: 'Bm'
-};
 
 export function readTraktorNml(nmlPath: string): ForeignLibrary {
   const xml = readFileSync(nmlPath, 'utf-8');

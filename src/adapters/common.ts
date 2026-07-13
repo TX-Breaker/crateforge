@@ -89,7 +89,20 @@ export function pathToLocation(p: string): string {
   const posix = p.replace(/\\/g, '/');
   const encoded = posix
     .split('/')
-    .map((seg) => encodeURIComponent(seg).replace(/'/g, '%27'))
+    // Il drive letter "C:" NON va percent-encodato (diventerebbe "C%3A" e
+    // Rekordbox non risolverebbe il file su Windows all'import).
+    .map((seg, i) => (i === 0 && /^[A-Za-z]:$/.test(seg) ? seg : encodeURIComponent(seg).replace(/'/g, '%27')))
     .join('/');
   return `file://localhost/${encoded.replace(/^\//, '')}`;
+}
+
+/** Estensione file → 'Kind' Rekordbox (MP3 File, FLAC File, …). */
+export function kindFromPath(p: string | null): string {
+  const ext = (p?.match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase();
+  const map: Record<string, string> = {
+    mp3: 'MP3 File', flac: 'FLAC File', wav: 'WAV File', aiff: 'AIFF File',
+    aif: 'AIFF File', m4a: 'M4A File', aac: 'AAC File', ogg: 'OGG File',
+    alac: 'ALAC File', wma: 'WMA File'
+  };
+  return map[ext] ?? 'MP3 File';
 }

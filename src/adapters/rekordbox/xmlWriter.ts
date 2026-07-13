@@ -7,6 +7,7 @@ import {
   getPlaylists,
   getPlaylistTrackIds,
   iterateTracks,
+  kindFromPath,
   pathToLocation
 } from '../common';
 
@@ -36,7 +37,7 @@ export function writeRekordboxXml(
       Artist: t.artist ?? '',
       Album: t.album ?? '',
       Genre: t.genre ?? '',
-      Kind: 'MP3 File',
+      Kind: kindFromPath(t.path),
       TotalTime: t.duration_s !== null ? String(Math.round(t.duration_s)) : '0',
       Year: t.year !== null ? String(t.year) : '',
       AverageBpm: t.bpm !== null ? t.bpm.toFixed(2) : '',

@@ -9,6 +9,7 @@ import {
   getPlaylistTrackIds,
   iterateTracks
 } from '../common';
+import { CAMELOT_TO_TRAKTOR } from './traktorKeys';
 
 /**
  * Export Traktor NML (§6 Fase 1.4): hot cue, beatgrid (BPM), playlist.
@@ -43,13 +44,18 @@ export function writeTraktorNml(
     entry.ele('INFO', {
       GENRE: t.genre ?? '',
       PLAYTIME: t.duration_s !== null ? String(Math.round(t.duration_s)) : '',
-      RELEASE_DATE: t.year !== null ? `${t.year}/1/1` : ''
+      RELEASE_DATE: t.year !== null ? `${t.year}/1/1` : '',
+      // KEY testuale per compatibilità/lettura umana.
+      KEY: t.musical_key ?? ''
     });
     if (t.bpm !== null) {
       entry.ele('TEMPO', { BPM: t.bpm.toFixed(6), BPM_QUALITY: '100.000000' });
     }
-    if (t.musical_key) {
-      entry.ele('MUSICAL_KEY', { VALUE: t.musical_key });
+    // MUSICAL_KEY@VALUE è un INTERO 0-23 in Traktor: scriverlo come testo lo
+    // rendeva illeggibile perfino al nostro reader. Derivato dalla Camelot.
+    const traktorKeyIdx = t.camelot ? CAMELOT_TO_TRAKTOR[t.camelot] : undefined;
+    if (traktorKeyIdx !== undefined) {
+      entry.ele('MUSICAL_KEY', { VALUE: String(traktorKeyIdx) });
     }
     // Grid marker (TYPE 4): àncora la beatgrid all'inizio quando c'è il BPM.
     if (t.bpm !== null && t.bpm > 0) {

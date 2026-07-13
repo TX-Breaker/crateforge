@@ -32,6 +32,9 @@ export function writeVirtualDjXml(
       Year: t.year !== null ? String(t.year) : '',
       Remix: t.version_label ?? ''
     });
+    // Infos@SongLength: il nostro reader legge la durata da qui, senza si
+    // perde nel round-trip finché VDJ non ri-analizza.
+    if (t.duration_s !== null) song.ele('Infos', { SongLength: t.duration_s.toFixed(3) });
     const scan: Record<string, string> = {};
     if (t.bpm !== null && t.bpm > 0) scan.Bpm = (60 / t.bpm).toFixed(6); // VDJ usa secondi-per-beat
     if (t.musical_key) scan.Key = t.musical_key;

@@ -25,6 +25,10 @@
     "src/services/**/*",
     "src/adapters/**/*",
     "tests/**/*",
-    "electron.vite.config.ts"
+    "electron.vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "tests/i18nParity.test.ts"
   ]
 }

@@ -16,5 +16,5 @@
       "@/*": ["src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/preload/api.d.ts"]
+  "include": ["src/renderer/**/*", "src/preload/api.d.ts", "tests/i18nParity.test.ts"]
 }

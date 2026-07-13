@@ -6,7 +6,8 @@
  */
 export type Locale = 'it' | 'en' | 'fr' | 'de';
 
-const dict = {
+// Esportato anche per il test di parità chiavi (tests/i18nParity.test.ts).
+export const dict = {
   it: {
     'nav.dashboard': 'Panoramica',
     'nav.health': 'Salute libreria',

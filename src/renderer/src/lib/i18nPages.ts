@@ -14,7 +14,8 @@ import type { Locale } from './i18n';
 type Params = Record<string, string | number>;
 type PageDict = Record<string, Record<string, string>>;
 
-const pages: Record<Locale, PageDict> = {
+// Esportato per il test di parità chiavi tra lingue (tests/i18nParity.test.ts).
+export const pages: Record<Locale, PageDict> = {
   it: {
     common: {
       prev: '← Precedenti',

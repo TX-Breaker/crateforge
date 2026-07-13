@@ -118,22 +118,46 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
       const parentCol = pick(plCols, 'parentListId', 'parentId');
       const peCols = columnsOf(db, 'PlaylistEntity');
       const trackCol = pick(peCols, 'trackId', 'databaseUuidTrackId') ?? 'trackId';
-      const orderCol = pick(peCols, 'nextEntityId', 'membershipReference');
+      // Engine ordina le entity con una lista concatenata (nextEntityId, 0 = fine).
+      const hasChain = peCols.has('nextEntityId') && peCols.has('id');
 
       const pls = db
         .prepare(`SELECT id, ${titleCol} AS title${parentCol ? `, ${parentCol} AS parent` : ''} FROM Playlist`)
         .all() as { id: number; title: string; parent?: number }[];
-      const entityStmt = db.prepare(
-        `SELECT ${trackCol} AS trackId FROM PlaylistEntity WHERE listId = ? ORDER BY ${orderCol ? 'rowid' : 'rowid'}`
-      );
       for (const p of pls) {
-        const entities = entityStmt.all(p.id) as { trackId: number }[];
+        let trackSourceIds: string[];
+        if (hasChain) {
+          const rows = db
+            .prepare(`SELECT id, ${trackCol} AS trackId, nextEntityId AS next FROM PlaylistEntity WHERE listId = ?`)
+            .all(p.id) as { id: number; trackId: number; next: number }[];
+          // Testa = entity non referenziata da nessun `next`; poi segui la catena.
+          const referenced = new Set(rows.map((r) => r.next).filter((n) => n));
+          const byId = new Map(rows.map((r) => [r.id, r]));
+          let head = rows.find((r) => !referenced.has(r.id));
+          const ordered: string[] = [];
+          const seen = new Set<number>();
+          while (head && !seen.has(head.id)) {
+            seen.add(head.id);
+            ordered.push(String(head.trackId));
+            head = head.next ? byId.get(head.next) : undefined;
+          }
+          // Se la catena è rotta/incompleta, aggiungi il resto per rowid.
+          trackSourceIds =
+            ordered.length === rows.length
+              ? ordered
+              : [...ordered, ...rows.filter((r) => !seen.has(r.id)).map((r) => String(r.trackId))];
+        } else {
+          const rows = db
+            .prepare(`SELECT ${trackCol} AS trackId FROM PlaylistEntity WHERE listId = ? ORDER BY rowid`)
+            .all(p.id) as { trackId: number }[];
+          trackSourceIds = rows.map((r) => String(r.trackId));
+        }
         playlists.push({
           sourceId: String(p.id),
           name: p.title ?? 'Senza nome',
           isFolder: false,
           parentSourceId: p.parent ? String(p.parent) : null,
-          trackSourceIds: entities.map((e) => String(e.trackId))
+          trackSourceIds
         });
       }
     }
