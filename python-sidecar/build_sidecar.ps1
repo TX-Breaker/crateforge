@@ -14,10 +14,17 @@ python -m pip install --upgrade pip
 # (es. blowfish, dipendenza di pyrekordbox) sono ok, niente compilatori C.
 python -m pip install --prefer-binary -r requirements.txt
 
-pyinstaller --noconfirm --clean --onedir `
-  --name crateforge-sidecar `
-  --collect-all pyrekordbox `
-  sidecar.py
+# Build dallo .spec (raccoglie pyrekordbox + numpy + sqlcipher3 + sqlalchemy:
+# senza numpy esplicito il binario frozen fallirebbe con
+# "No module named 'numpy._core._exceptions'").
+# PyInstaller scrive i log INFO su stderr: con ErrorActionPreference=Stop
+# PowerShell li tratterebbe come errore fatale, quindi lo allentiamo qui.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+pyinstaller --noconfirm --clean crateforge-sidecar.spec
+$pyiExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($pyiExit -ne 0) { throw "PyInstaller fallito (exit $pyiExit)" }
 
 # fpcalc (Chromaprint) incluso nel pacchetto: l'utente non deve installarlo.
 $fpcalcVersion = '1.5.1'

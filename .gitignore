@@ -6,7 +6,10 @@ dist/
 python-sidecar/.venv/
 python-sidecar/build/
 python-sidecar/dist/
+# crateforge-sidecar.spec è mantenuto a mano (raccolta esplicita di numpy &
+# co.): tracciato. Altri .spec generati restano ignorati.
 python-sidecar/*.spec
+!python-sidecar/crateforge-sidecar.spec
 tests/fixtures/generated/
 tests/fixtures/master.db
 *.tsbuildinfo

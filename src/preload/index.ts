@@ -114,6 +114,12 @@ const api = {
     playlists: () => ipcRenderer.invoke('planner:playlists'),
     analyze: (playlistId: number) => ipcRenderer.invoke('planner:analyze', playlistId)
   },
+  siae: {
+    readHistory: (masterDbPath: string) => ipcRenderer.invoke('siae:readHistory', masterDbPath),
+    sessions: () => ipcRenderer.invoke('siae:sessions'),
+    export: (sessionId: string, outPath: string, venue?: string, eventDate?: string) =>
+      ipcRenderer.invoke('siae:export', sessionId, outPath, venue, eventDate)
+  },
   health: {
     get: () => ipcRenderer.invoke('health:get')
   },

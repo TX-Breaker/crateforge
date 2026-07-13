@@ -776,6 +776,72 @@ def cmd_write_tags(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# read-history — cronologia riproduzioni dal master.db (per il report SIAE)
+# ---------------------------------------------------------------------------
+
+def cmd_read_history(args: argparse.Namespace) -> None:
+    """Legge le sessioni della cronologia di Rekordbox (DjmdHistory +
+    DjmdSongHistory) dal master.db e le scrive nella tabella play_history
+    dell'UDM. Sola lettura sul master.db; rimpiazza la cronologia precedente.
+    """
+    try:
+        from pyrekordbox import Rekordbox6Database
+    except ImportError:
+        fail("pyrekordbox non disponibile nel sidecar: rebuild richiesto.")
+        return
+    try:
+        # Come per ingest-masterdb: senza --key pyrekordbox auto-rileva la
+        # chiave. Passare key="" romperebbe l'auto-detect.
+        if args.key:
+            rb = Rekordbox6Database(path=args.master_db, key=args.key)
+        else:
+            rb = Rekordbox6Database(path=args.master_db)
+    except Exception as exc:
+        fail(f"Apertura del master.db non riuscita: {str(exc)[:300]}")
+        return
+
+    udm = open_udm(args.udm_path)
+    udm.execute("DELETE FROM play_history")
+    sessions = 0
+    rows = 0
+    try:
+        for hist in rb.get_history():
+            sessions += 1
+            sid = str(_get(hist, "ID", "id") or sessions)
+            sname = _get(hist, "Name")
+            sdate = _get(hist, "DateCreated", "created_at")
+            songs = list(_get(hist, "Songs") or [])
+            for idx, sh in enumerate(songs):
+                content = _get(sh, "Content")
+                t = _content_to_track(content) if content is not None else None
+                if t is None:
+                    continue
+                isrc = _get(content, "ISRC")
+                label = _get(_get(content, "Label"), "Name") or _get(content, "LabelName")
+                udm.execute(
+                    """INSERT INTO play_history
+                       (session_id, session_name, session_date, position, title, artist,
+                        album, genre, year, bpm, musical_key, duration_s, isrc, label, path)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, sname, str(sdate) if sdate is not None else None, idx,
+                        t["title"], t["artist"], t["album"], t["genre"], t["year"],
+                        t["bpm"], t["musical_key"], t["duration_s"], isrc, label, t["path"],
+                    ),
+                )
+                rows += 1
+        udm.commit()
+    except Exception as exc:  # noqa: BLE001
+        udm.close()
+        rb.close()
+        fail(f"Lettura della cronologia non riuscita: {str(exc)[:300]}")
+        return
+    udm.close()
+    rb.close()
+    emit({"type": "done", "data": {"sessions": sessions, "rows": rows}})
+
+
+# ---------------------------------------------------------------------------
 # masterdb-create-playlist — scrittura DIRETTA nel master.db (opt-in massimo)
 # ---------------------------------------------------------------------------
 
@@ -971,6 +1037,11 @@ def main() -> None:
     p_dk = sub.add_parser("download-key")
     p_dk.add_argument("--udm-path", required=True)
 
+    p_rh = sub.add_parser("read-history")
+    p_rh.add_argument("--udm-path", required=True)
+    p_rh.add_argument("--master-db", required=True)
+    p_rh.add_argument("--key", required=False, default="")
+
     p_mcp = sub.add_parser("masterdb-create-playlist")
     p_mcp.add_argument("--udm-path", required=True)
     p_mcp.add_argument("--master-db", required=True)
@@ -999,6 +1070,8 @@ def main() -> None:
         cmd_write_tags(args)
     elif args.command == "download-key":
         cmd_download_key(args)
+    elif args.command == "read-history":
+        cmd_read_history(args)
     elif args.command == "masterdb-create-playlist":
         cmd_masterdb_create_playlist(args)
 

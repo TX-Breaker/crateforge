@@ -14,7 +14,7 @@ import type BetterSqlite3 from 'better-sqlite3';
  *    I due percorsi non girano mai in concorrenza: Node serializza i job.
  *  - settings / jobs / oplog → SOLO Node.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -203,6 +203,30 @@ const MIGRATIONS: Record<number, string> = {
     INSERT INTO playlists_new SELECT * FROM playlists;
     DROP TABLE playlists;
     ALTER TABLE playlists_new RENAME TO playlists;
+  `,
+  // Cronologia riproduzioni (per il report SIAE). Scrittore: sidecar Python
+  // (comando read-history, la legge dal master.db); Node la legge per l'export.
+  // Rimpiazzata a ogni lettura (non è storico persistente app-side).
+  5: `
+    CREATE TABLE IF NOT EXISTS play_history (
+      id INTEGER PRIMARY KEY,
+      session_id TEXT,
+      session_name TEXT,
+      session_date TEXT,
+      position INTEGER,
+      title TEXT,
+      artist TEXT,
+      album TEXT,
+      genre TEXT,
+      year INTEGER,
+      bpm REAL,
+      musical_key TEXT,
+      duration_s REAL,
+      isrc TEXT,
+      label TEXT,
+      path TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_history_session ON play_history(session_id);
   `
 };
 

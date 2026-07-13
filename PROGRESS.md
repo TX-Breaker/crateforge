@@ -289,6 +289,34 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
 - [ ] Proposta cue automatica sugli item della coda (richiede livello AI; per ora
       si usa Auto-Cue dopo l'import)
 
+## NOTE "vs Rekordbox" + REPORT SIAE (richieste utente 13-14/07/2026)
+- [x] Nota inline "Rispetto a Rekordbox" per pagina: componente RekordboxDiff,
+      namespace i18n `rbdiff` (label + 12 pagine × 4 lingue), spiega differenza e
+      beneficio (es. backup incrementale vs backup completo Rekordbox). Cablata
+      nelle 12 pagine funzione
+- [x] Report SIAE: esporta i brani riprodotti in una serata per la dichiarazione.
+      DEFAULT = dalla CRONOLOGIA che Rekordbox già registra nel master.db
+      (DjmdHistory/DjmdSongHistory via pyrekordbox) — nessuna cattura live,
+      master.db in sola lettura. Sidecar `read-history` → tabella UDM
+      `play_history` (schema v5); services/siae/siaeReport.ts genera lo .xlsx nel
+      formato "programma musicale" (N./Titolo/Autore-Interprete/Album-Etichetta/
+      Anno/Durata/ISRC/Genere). SiaePage + nav `nav.siae` + namespace `siae` ×4
+- [x] Modalità "cattura live" (PRO DJ LINK) mostrata solo in Esperto e flaggata
+      onestamente come sperimentale/non ancora disponibile (radio disabilita il
+      pulsante di lettura): di default resta la cronologia, come consigliato
+- [x] Onestà colonne SIAE: ISRC/autore-editore spesso assenti in Rekordbox → le
+      colonne restano, vuote dove il dato manca (dichiarato nel box "Come funziona")
+- [x] BUG LATENTE risolto: il binario PyInstaller NON includeva numpy con le sue
+      estensioni C (numpy 2.x, `numpy._core._exceptions`), quindi TUTTE le funzioni
+      su master.db (ingest-masterdb, masterdb-playlist, read-history) morivano
+      all'import nel pacchetto shippato. Spec aggiornato: collect_all su
+      pyrekordbox + numpy + sqlcipher3 + sqlalchemy; build_sidecar.ps1 ora compila
+      dallo .spec e non tratta lo stderr INFO di PyInstaller come errore fatale
+- [ ] Export diretto Engine DJ + Serato: RIMANDATO su richiesta utente (servono
+      file audio Serato-taggati reali come fixture; versione Engine target + m.db
+      di riferimento + encoding blob PerformanceData)
+- [x] Rinviata: cattura live SIAE reale (Rekordbox aperto/controller PRO DJ LINK)
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)

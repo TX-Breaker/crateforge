@@ -11,6 +11,7 @@ import {
   Home,
   Info,
   MapPin,
+  Receipt,
   Repeat,
   Route,
   ScrollText,
@@ -37,6 +38,7 @@ import { TaggerPage } from '@/pages/TaggerPage';
 import { StemsPage } from '@/pages/StemsPage';
 import { InboxPage } from '@/pages/InboxPage';
 import { PlannerPage } from '@/pages/PlannerPage';
+import { SiaePage } from '@/pages/SiaePage';
 import { ReviewPage } from '@/pages/ReviewPage';
 import { LogPage } from '@/pages/LogPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -57,6 +59,7 @@ type PageId =
   | 'stems'
   | 'inbox'
   | 'planner'
+  | 'siae'
   | 'review'
   | 'log'
   | 'settings'
@@ -76,6 +79,7 @@ const NAV: NavItem[] = [
   { id: 'backup', labelKey: 'nav.backup', icon: <HardDriveDownload /> },
   { id: 'orphans', labelKey: 'nav.orphans', icon: <FileWarning /> },
   { id: 'report', labelKey: 'nav.report', icon: <Sheet /> },
+  { id: 'siae', labelKey: 'nav.siae', icon: <Receipt /> },
   { id: 'converter', labelKey: 'nav.converter', icon: <Repeat /> },
   { id: 'relocator', labelKey: 'nav.relocator', icon: <MapPin />, expertOnly: true },
   { id: 'dedup', labelKey: 'nav.dedup', icon: <Fingerprint />, expertOnly: true },
@@ -149,6 +153,7 @@ export function App() {
         {active === 'stems' && <StemsPage />}
         {active === 'inbox' && <InboxPage />}
         {active === 'planner' && <PlannerPage />}
+        {active === 'siae' && <SiaePage />}
         {active === 'review' && <ReviewPage />}
         {active === 'log' && <LogPage />}
         {active === 'settings' && <SettingsPage />}

@@ -46,6 +46,7 @@ import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDae
 import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
 import { buildSet, BpmCurve } from '@services/setbuilder/setBuilder';
 import { computeHealth } from '@core/health';
+import { exportSiaeReport, listHistorySessions } from '@services/siae/siaeReport';
 import { writeInboxXml } from '@adapters/rekordbox/inboxXml';
 import { writeSetXml } from '@adapters/rekordbox/setXml';
 import type { TrackRow } from '@core/udm';
@@ -906,6 +907,26 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
         `SCRITTURA DIRETTA: playlist "${playlistName}", ${JSON.stringify(r.data)}`
       );
       return { ok: true, ...r.data, backupDir, requested: trackIds.length };
+    }
+  );
+
+  // ---- Report SIAE (cronologia riproduzioni da Rekordbox) ----
+  ipcMain.handle('siae:readHistory', async (_e, masterDbPath: string) => {
+    const check = checkSidecar();
+    if (!check.available) {
+      return { ok: false, message: 'Il modulo di lettura del database non è disponibile.' };
+    }
+    const r = await runSidecarJob('read-history', 'read-history', ['--master-db', masterDbPath]);
+    logOperation(db, 'siae.readHistory', masterDbPath, r.ok ? 'ok' : 'error', r.ok ? JSON.stringify(r.data) : r.message);
+    return r.ok ? { ok: true, ...r.data } : { ok: false, message: r.message };
+  });
+  ipcMain.handle('siae:sessions', () => listHistorySessions(db));
+  ipcMain.handle(
+    'siae:export',
+    async (_e, sessionId: string, outPath: string, venue?: string, eventDate?: string) => {
+      const r = await exportSiaeReport(db, { sessionId, outPath, venue, eventDate });
+      logOperation(db, 'siae.export', outPath, 'ok', `${r.rows} brani`);
+      return r;
     }
   );
 
