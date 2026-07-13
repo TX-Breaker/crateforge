@@ -133,6 +133,47 @@ lista e le regole inderogabili (§3), riepilogare fatto/mancante, attendere via.
       (contenuto intatto, hash uguale), file inesistente (errore pulito).
       Suite: 72/72 verdi
 
+## FOLLOW-UP DA ANALISI COMPLETA (workflow 14/07, 14/14 agent) — BLOCCHI D–J
+Il workflow di analisi+ricerca ha finalmente completato tutto (7 code-map + 6
+ricerca formati + piano sintesi). Piano completo salvato in `docs/ANALISI-PIANO.md`.
+Applicati altri fix prioritari (oltre ai blocchi A–C già fatti):
+- [x] D — coda job unica (withJobLock): serializza ingestion + ogni job sidecar,
+      risolve concorrenza UDM Node/Python (SQLITE_BUSY) e race su currentCancel
+- [x] E — payload sidecar via file (--tags-file/--content-ids-file): niente
+      limite argv Windows 32K; +validazione cues:save; sidecar analyze-cues
+      try/except; +test e2e --tags-file
+- [x] F — test relocator (feature distruttiva prima non testata) + gate CI
+      (pull_request, job check typecheck+test, concurrency, matrice mac x64+arm64,
+      verifica sidecar+fpcalc nell'artefatto, cache pip, retention)
+- [x] G — sidecar cancel = tree-kill (taskkill /T su win, process group POSIX +
+      escalation SIGKILL) + parse/dispatch eventi separati
+- [x] H — RISCHI DATI: normalizzazione Unicode NFC (canonicalizePath/Name in
+      fsutil) in orphans+relocator (su macOS NFD-disk vs NFC-DB = falsi orfani →
+      cancellazioni); quarantena trova dest libero prima di spostare (rename
+      sovrascriveva gli omonimi)
+- [x] I — sidecar: playlist master.db position=indice progressivo (PK collideva
+      → brani persi); stems in build frozen via demucs in-process
+- [x] J — Dashboard catch mancante + numeri/messaggi localizzati (no più it-IT
+      hardcoded). 168/168 test totali
+
+### ANCORA APERTI dal piano (docs/ANALISI-PIANO.md), non ancora fatti:
+- [ ] Perf: relocator existsSync sincrono → fs.promises.access con concorrenza;
+      reportViewer ri-parsa l'xlsx a ogni pagina → cache LRU per path+mtime
+- [ ] UX: stato di lavoro perso al cambio pagina (routing per smontaggio);
+      scoperta modalità Esperto (voci lucchetto + hint Health cliccabili);
+      onboarding primo avvio; persistenza percorsi Backup; azioni per riga in
+      ReviewPage; refactor componenti condivisi (Pager/OutcomeAlerts/useAsyncAction)
+- [ ] i18n residuo: JobProgress/ExcelViewer etichette hardcoded
+- [ ] CONVERSIONE Blocco 4: Serato read/write (crate binari + GEOB "Serato
+      Markers2/BeatGrid" via sidecar Python; rif. serato-tags/seratojs); Engine
+      cue/loop dai blob PerformanceData (zlib, rif. djinterop); VirtualDJ
+      playlist da .vdjfolder; export Engine (m.db nuovo)
+- [ ] Schema v5: rating/color/comment/track_number + tabella beatgrids (oggi
+      rating e colore traccia non fluiscono in nessuna direzione)
+- [ ] Dedup cross-source nell'UDM (stesso file da Traktor+Engine+Rekordbox = 2-3
+      righe tracks); merge per path normalizzato/acoustic_id
+- [ ] syncDaemon: confronto path canonicalizzato (NFC) come orphans
+
 ## HARDENING DA ANALISI CODICE (workflow multi-agente, 13-14/07/2026) — 3 BLOCCHI
 Il workflow di analisi ha mappato i 7 sottosistemi (i ricercatori formati sono
 falliti per limite sessione; ricerca fatta inline). Applicati i fix prioritari:
