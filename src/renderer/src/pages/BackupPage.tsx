@@ -7,6 +7,7 @@ import { JobProgressBar } from '@/components/JobProgress';
 import { formatBytes } from '@/lib/utils';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 import { t } from '@/lib/i18n';
 
 interface PlanSummary {
@@ -88,6 +89,8 @@ export function BackupPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="backup" />
 
       <Alert>
         <ShieldCheck className="h-4 w-4" />

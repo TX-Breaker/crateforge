@@ -8,6 +8,7 @@ import { JobProgressBar } from '@/components/JobProgress';
 import { SaveTargetNotice, type SaveTarget } from '@/components/SaveTargetNotice';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 
 interface Proposal {
   trackId: number;
@@ -107,6 +108,8 @@ export function TaggerPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="tagger" />
 
       <Alert variant="warning">
         <AlertTitle>{tp('warnTitle')}</AlertTitle>

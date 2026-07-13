@@ -450,6 +450,21 @@ export const pages: Record<Locale, PageDict> = {
       mdbOutDone: 'Playlist "{name}" scritta nel master.db ({n} brani aggiunti, {missing} non trovati). Backup in {dir}. Riapri Rekordbox per vederla.',
       mdbErr: 'Scrittura nel master.db non riuscita: {msg}'
     },
+    rbdiff: {
+      label: 'Rispetto a Rekordbox',
+      backup: 'il "Backup Library" di Rekordbox rifà ogni volta un archivio completo (lento); qui il backup è incrementale — solo i file nuovi o modificati — quindi dura secondi, con verifica d\'integrità.',
+      orphans: 'Rekordbox segnala i brani mancanti in libreria ma non i file sul disco che non sono in libreria; qui trovi proprio quelli, con lo spazio recuperabile e la quarantena reversibile (niente cancellazioni al volo).',
+      report: 'Rekordbox non esporta un foglio Excel dettagliato; qui ottieni un .xlsx con versione del brano (da regex), notazione Camelot, Acoustic ID e i tag mancanti evidenziati in rosso.',
+      converter: 'Rekordbox esporta solo il proprio XML; qui converti da e verso Traktor, VirtualDJ ed Engine — CrateForge fa da ponte anti-lock-in.',
+      dedup: 'la funzione "Duplicate" di Rekordbox confronta i tag (titolo/artista); qui il confronto è per impronta acustica, quindi trova lo stesso audio anche con nomi file diversi.',
+      relocator: 'il "Relocate" di Rekordbox lavora per cartella; qui ricolleghi per nome file e per impronta acustica, generando un XML da importare — senza mai toccare il master.db.',
+      autocue: 'Rekordbox analizza il brano ma non ti propone hot cue da rivedere; qui i cue sono suggeriti e li salvi solo se li approvi tu (human-in-the-loop).',
+      planner: 'oltre ai "Related Tracks" di Rekordbox, qui analizzi le transizioni di una playlist (compatibilità Camelot + salti BPM) e ricevi tracce-ponte, in sola lettura.',
+      setbuilder: 'Rekordbox non costruisce scalette armoniche; qui, da un brano di partenza, ottieni una scaletta suggerita per key compatibili e curva BPM.',
+      tagger: 'Rekordbox non completa i metadati da database esterni; qui interroghi MusicBrainz/Discogs (solo testo, mai audio) e applichi le proposte che scegli.',
+      inbox: 'Rekordbox non sorveglia una cartella di nuovi acquisti; qui la coda prepara i brani e genera un XML da importare, senza iniettare nulla nel database.',
+      health: 'Rekordbox non dà una pagella della libreria; qui vedi a colpo d\'occhio cosa manca (BPM, key, tag, duplicati) e dove sistemarlo.'
+    },
     guide: {
       exportTitle: 'Esportare la collection in XML da Rekordbox',
       importTitle: 'Importare in Rekordbox un XML di CrateForge',
@@ -916,6 +931,21 @@ export const pages: Record<Locale, PageDict> = {
       mdbDlgBody2: 'Before continuing, fully CLOSE Rekordbox: if it is open, the write can corrupt the library. Ticking below confirms you closed it.',
       mdbOutDone: 'Playlist "{name}" written into master.db ({n} tracks added, {missing} not found). Backup in {dir}. Reopen Rekordbox to see it.',
       mdbErr: 'Writing into master.db failed: {msg}'
+    },
+    rbdiff: {
+      label: 'Compared to Rekordbox',
+      backup: 'Rekordbox\'s "Backup Library" rebuilds a full archive every time (slow); here the backup is incremental — only new or changed files — so it takes seconds, with integrity check.',
+      orphans: 'Rekordbox flags tracks missing from the library but not the files on disk that are not in the library; here you find exactly those, with reclaimable space and a reversible quarantine (no on-the-fly deletions).',
+      report: 'Rekordbox does not export a detailed Excel sheet; here you get a .xlsx with the track version (from regex), Camelot notation, Acoustic ID and missing tags highlighted in red.',
+      converter: 'Rekordbox only exports its own XML; here you convert to and from Traktor, VirtualDJ and Engine — CrateForge acts as an anti-lock-in bridge.',
+      dedup: 'Rekordbox\'s "Duplicate" compares tags (title/artist); here the comparison is by acoustic fingerprint, so it finds the same audio even with different file names.',
+      relocator: 'Rekordbox\'s "Relocate" works by folder; here you reconnect by file name and by acoustic fingerprint, generating an XML to import — never touching the master.db.',
+      autocue: 'Rekordbox analyzes the track but does not propose hot cues for you to review; here cues are suggested and you save only the ones you approve (human-in-the-loop).',
+      planner: 'beyond Rekordbox\'s "Related Tracks", here you analyze a playlist\'s transitions (Camelot compatibility + BPM jumps) and get bridge tracks, read-only.',
+      setbuilder: 'Rekordbox does not build harmonic sets; here, from a starting track, you get a suggested set by compatible keys and a BPM curve.',
+      tagger: 'Rekordbox does not fill metadata from external databases; here you query MusicBrainz/Discogs (text only, never audio) and apply the proposals you choose.',
+      inbox: 'Rekordbox does not watch a new-purchases folder; here the queue prepares tracks and generates an XML to import, without injecting anything into the database.',
+      health: 'Rekordbox does not give a library report card; here you see at a glance what is missing (BPM, key, tags, duplicates) and where to fix it.'
     },
     guide: {
       exportTitle: 'Export the collection as XML from Rekordbox',
@@ -1384,6 +1414,21 @@ export const pages: Record<Locale, PageDict> = {
       mdbOutDone: 'Playlist « {name} » écrite dans master.db ({n} titres ajoutés, {missing} introuvables). Sauvegarde dans {dir}. Rouvrez Rekordbox pour la voir.',
       mdbErr: 'Échec de l\'écriture dans master.db : {msg}'
     },
+    rbdiff: {
+      label: 'Par rapport à Rekordbox',
+      backup: 'le « Backup Library » de Rekordbox refait une archive complète à chaque fois (lent) ; ici la sauvegarde est incrémentale — seuls les fichiers nouveaux ou modifiés — donc quelques secondes, avec vérification d\'intégrité.',
+      orphans: 'Rekordbox signale les titres manquants dans la bibliothèque mais pas les fichiers sur le disque absents de la bibliothèque ; ici vous trouvez justement ceux-là, avec l\'espace récupérable et une quarantaine réversible (aucune suppression à la volée).',
+      report: 'Rekordbox n\'exporte pas de feuille Excel détaillée ; ici vous obtenez un .xlsx avec la version du titre (par regex), la notation Camelot, l\'Acoustic ID et les tags manquants surlignés en rouge.',
+      converter: 'Rekordbox n\'exporte que son propre XML ; ici vous convertissez depuis et vers Traktor, VirtualDJ et Engine — CrateForge sert de pont anti-verrouillage.',
+      dedup: 'la fonction « Duplicate » de Rekordbox compare les tags (titre/artiste) ; ici la comparaison se fait par empreinte acoustique, donc elle trouve le même audio même avec des noms de fichiers différents.',
+      relocator: 'le « Relocate » de Rekordbox fonctionne par dossier ; ici vous reconnectez par nom de fichier et par empreinte acoustique, en générant un XML à importer — sans jamais toucher le master.db.',
+      autocue: 'Rekordbox analyse le titre mais ne vous propose pas de hot cues à vérifier ; ici les cues sont suggérés et vous ne sauvegardez que ceux que vous approuvez (human-in-the-loop).',
+      planner: 'au-delà des « Related Tracks » de Rekordbox, ici vous analysez les transitions d\'une playlist (compatibilité Camelot + sauts de BPM) et recevez des titres-pont, en lecture seule.',
+      setbuilder: 'Rekordbox ne construit pas de sets harmoniques ; ici, à partir d\'un titre de départ, vous obtenez une set list suggérée par keys compatibles et courbe BPM.',
+      tagger: 'Rekordbox ne complète pas les métadonnées depuis des bases externes ; ici vous interrogez MusicBrainz/Discogs (texte seulement, jamais d\'audio) et appliquez les propositions choisies.',
+      inbox: 'Rekordbox ne surveille pas un dossier de nouveaux achats ; ici la file prépare les titres et génère un XML à importer, sans rien injecter dans la base.',
+      health: 'Rekordbox ne donne pas de bulletin de la bibliothèque ; ici vous voyez d\'un coup d\'œil ce qui manque (BPM, key, tags, doublons) et où le corriger.'
+    },
     guide: {
       exportTitle: 'Exporter la collection en XML depuis Rekordbox',
       importTitle: 'Importer un XML de CrateForge dans Rekordbox',
@@ -1850,6 +1895,21 @@ export const pages: Record<Locale, PageDict> = {
       mdbDlgBody2: 'Bevor du fortfährst, SCHLIESSE Rekordbox vollständig: ist es offen, kann das Schreiben die Bibliothek beschädigen. Das Häkchen unten bestätigt, dass du es geschlossen hast.',
       mdbOutDone: 'Playlist „{name}" in master.db geschrieben ({n} Titel hinzugefügt, {missing} nicht gefunden). Backup in {dir}. Öffne Rekordbox neu, um sie zu sehen.',
       mdbErr: 'Schreiben in master.db fehlgeschlagen: {msg}'
+    },
+    rbdiff: {
+      label: 'Im Vergleich zu Rekordbox',
+      backup: 'Rekordbox\' „Backup Library" baut jedes Mal ein komplettes Archiv neu (langsam); hier ist das Backup inkrementell — nur neue oder geänderte Dateien — also Sekunden, mit Integritätsprüfung.',
+      orphans: 'Rekordbox markiert in der Bibliothek fehlende Titel, aber nicht die Dateien auf der Platte, die nicht in der Bibliothek sind; hier findest du genau die, mit freigebbarem Speicher und umkehrbarer Quarantäne (kein Löschen nebenbei).',
+      report: 'Rekordbox exportiert kein detailliertes Excel-Blatt; hier bekommst du eine .xlsx mit Titel-Version (per Regex), Camelot-Notation, Acoustic ID und rot markierten fehlenden Tags.',
+      converter: 'Rekordbox exportiert nur die eigene XML; hier konvertierst du von und zu Traktor, VirtualDJ und Engine — CrateForge als Anti-Lock-in-Brücke.',
+      dedup: 'Rekordbox\' „Duplicate" vergleicht Tags (Titel/Artist); hier ist der Vergleich per Audio-Fingerprint, findet also dasselbe Audio auch bei anderen Dateinamen.',
+      relocator: 'Rekordbox\' „Relocate" arbeitet pro Ordner; hier verbindest du per Dateiname und per Audio-Fingerprint neu und erzeugst eine XML zum Import — ohne die master.db anzufassen.',
+      autocue: 'Rekordbox analysiert den Titel, schlägt aber keine überprüfbaren Hot Cues vor; hier werden Cues vorgeschlagen und du speicherst nur die, die du bestätigst (human-in-the-loop).',
+      planner: 'über Rekordbox\' „Related Tracks" hinaus analysierst du hier die Übergänge einer Playlist (Camelot-Kompatibilität + BPM-Sprünge) und bekommst Brücken-Titel, nur lesend.',
+      setbuilder: 'Rekordbox baut keine harmonischen Sets; hier bekommst du aus einem Start-Titel eine vorgeschlagene Setlist nach kompatiblen Keys und BPM-Kurve.',
+      tagger: 'Rekordbox ergänzt keine Metadaten aus externen Datenbanken; hier fragst du MusicBrainz/Discogs ab (nur Text, nie Audio) und wendest die gewählten Vorschläge an.',
+      inbox: 'Rekordbox überwacht keinen Neukäufe-Ordner; hier bereitet die Warteschlange Titel vor und erzeugt eine XML zum Import, ohne etwas in die Datenbank einzuschleusen.',
+      health: 'Rekordbox gibt kein Bibliotheks-Zeugnis; hier siehst du auf einen Blick, was fehlt (BPM, Key, Tags, Duplikate) und wo du es reparierst.'
     },
     guide: {
       exportTitle: 'Die Collection als XML aus Rekordbox exportieren',

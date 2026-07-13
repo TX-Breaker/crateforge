@@ -16,6 +16,7 @@ import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { GuideDialog } from '@/components/GuideDialog';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 import { t } from '@/lib/i18n';
 
 type Format = 'rekordbox' | 'traktor' | 'virtualdj';
@@ -165,6 +166,8 @@ export function ConverterPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="converter" />
 
       <ConversionMatrix tp={tp} />
 

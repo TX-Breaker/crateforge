@@ -7,6 +7,7 @@ import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { PathField } from '@/pages/BackupPage';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 
 interface InboxItem {
   id: number;
@@ -108,6 +109,8 @@ export function InboxPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="inbox" />
 
       <Alert variant="warning">
         <AlertTitle>{tp('howTitle')}</AlertTitle>

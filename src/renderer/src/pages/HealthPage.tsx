@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/misc';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 
 interface Health {
   total: number;
@@ -62,6 +63,8 @@ export function HealthPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="health" />
 
       {h.total === 0 ? (
         <p className="text-sm text-muted-foreground">{tp('empty')}</p>

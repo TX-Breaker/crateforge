@@ -9,6 +9,7 @@ import { GuideDialog } from '@/components/GuideDialog';
 import { PathField } from '@/pages/BackupPage';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 import type { Locale } from '@/lib/i18n';
 
 interface BrokenRow {
@@ -92,6 +93,8 @@ export function RelocatorPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="relocator" />
 
       <Alert variant="warning">
         <AlertTitle>{tp('warnTitle')}</AlertTitle>

@@ -8,6 +8,7 @@ import { SaveTargetNotice } from '@/components/SaveTargetNotice';
 import { Waveform } from '@/components/Waveform';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 
 interface TrackRow {
   id: number;
@@ -184,6 +185,8 @@ export function AutoCuePage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="autocue" />
 
       <Alert variant="warning">
         <AlertTitle>{tp('warnTitle')}</AlertTitle>

@@ -7,6 +7,7 @@ import { JobProgressBar } from '@/components/JobProgress';
 import { ExcelViewer } from '@/components/ExcelViewer';
 import { useAppState } from '@/lib/appState';
 import { pageText } from '@/lib/i18nPages';
+import { RekordboxDiff } from '@/components/RekordboxDiff';
 
 /**
  * Generatore di Report Excel (§6 Fase 1.3). Export on-demand: il file viene
@@ -51,6 +52,8 @@ export function ReportPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{tp('title')}</h1>
         <p className="text-sm text-muted-foreground">{tp('subtitle')}</p>
       </div>
+
+      <RekordboxDiff page="report" />
 
       <Card>
         <CardHeader>
