@@ -28,7 +28,20 @@ import { ENGINE_STATUS } from '@adapters/engine';
 import { applyProposals, proposeTags, TagProposal, TagProvider } from '@services/tagger/autoTagger';
 import { app } from 'electron';
 import { join, basename } from 'path';
-import { copyFileSync, mkdirSync } from 'fs';
+import { copyFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+
+/**
+ * Scrive un payload JSON in un file temporaneo e lo passa al sidecar via
+ * `--…-file`, evitando il limite della command line di Windows (~32 KB) sui
+ * batch grandi (write-tags, masterdb). Il file va rimosso dopo.
+ */
+function writeTempJson(name: string, data: unknown): string {
+  const dir = join(app.getPath('userData'), 'tmp');
+  mkdirSync(dir, { recursive: true });
+  const p = join(dir, `${name}-${randomUUID()}.json`);
+  writeFileSync(p, JSON.stringify(data), 'utf-8');
+  return p;
+}
 import { listInbox, setInboxStatus, SyncDaemon } from '@services/watcher/syncDaemon';
 import { analyzePlaylist, listPlaylists } from '@services/planner/setPlanner';
 import { buildSet, BpmCurve } from '@services/setbuilder/setBuilder';
@@ -46,8 +59,29 @@ import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
  *  - un solo job di ingestion alla volta (serializza i writer sull'UDM).
  */
 export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => void {
-  let ingestionRunning = false;
   let currentCancel: (() => void) | null = null;
+
+  // Coda job unica: TUTTO ciò che scrive l'UDM o spawna il sidecar viene
+  // serializzato. Node (better-sqlite3) e Python non scrivono mai l'UDM in
+  // concorrenza, e con un solo job attivo alla volta currentCancel non ha race.
+  let anyJobRunning = false;
+  let jobChain: Promise<unknown> = Promise.resolve();
+  const withJobLock = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = jobChain.then(async () => {
+      anyJobRunning = true;
+      try {
+        return await fn();
+      } finally {
+        anyJobRunning = false;
+      }
+    });
+    // Il chain non deve mai rifiutare, altrimenti blocca i job successivi.
+    jobChain = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  };
   // Piani di backup tenuti nel main: al renderer va solo il riepilogo (§2, no bulk data su IPC).
   const backupPlans = new Map<string, { plan: BackupPlan; opts: BackupOptions }>();
   // Risultati di scansione orfani tenuti nel main: l'eliminazione può agire solo
@@ -144,57 +178,57 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
 
   // ---- ingestion XML (percorso pure-Node, modalità solo-XML) ----
   ipcMain.handle('library:ingestXml', async (_e, xmlPath: string) => {
-    if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
-    ingestionRunning = true;
-    const progress = new ThrottledProgress(wc());
-    const jobId = randomUUID();
-    try {
-      const result = ingestCollectionXml(db, xmlPath, (done, total) =>
-        progress.update({ jobId, phase: 'ingest-xml', done, total })
-      );
-      progress.finish({ jobId, phase: 'ingest-xml', done: result.tracks, total: result.tracks });
-      logOperation(db, 'ingest.xml', xmlPath, 'ok', JSON.stringify(result));
-      return result;
-    } catch (err) {
-      logOperation(db, 'ingest.xml', xmlPath, 'error', String(err));
-      throw err;
-    } finally {
-      ingestionRunning = false;
-    }
+    if (anyJobRunning) throw new Error('Un altro lavoro è già in corso.');
+    return withJobLock(async () => {
+      const progress = new ThrottledProgress(wc());
+      const jobId = randomUUID();
+      try {
+        const result = ingestCollectionXml(db, xmlPath, (done, total) =>
+          progress.update({ jobId, phase: 'ingest-xml', done, total })
+        );
+        progress.finish({ jobId, phase: 'ingest-xml', done: result.tracks, total: result.tracks });
+        logOperation(db, 'ingest.xml', xmlPath, 'ok', JSON.stringify(result));
+        return result;
+      } catch (err) {
+        progress.finish({ jobId, phase: 'ingest-xml', done: 1, total: 1 });
+        logOperation(db, 'ingest.xml', xmlPath, 'error', String(err));
+        throw err;
+      }
+    });
   });
 
   // ---- import da altri software DJ (pure-Node, sola lettura sul sorgente) ----
   ipcMain.handle('library:importForeign', async (_e, kind: 'traktor' | 'virtualdj' | 'engine', path: string) => {
-    if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
-    ingestionRunning = true;
-    const progress = new ThrottledProgress(wc());
-    const jobId = randomUUID();
-    try {
-      const lib =
-        kind === 'traktor'
-          ? readTraktorNml(path)
-          : kind === 'engine'
-            ? readEngineLibrary(path)
-            : readVirtualDjXml(path);
-      const result = importForeignLibrary(db, lib, (done, total) =>
-        progress.update({ jobId, phase: `import-${kind}`, done, total })
-      );
-      progress.finish({ jobId, phase: `import-${kind}`, done: result.tracks, total: result.tracks });
-      logOperation(db, `import.${kind}`, path, 'ok', JSON.stringify(result));
-      return { ok: true, ...result };
-    } catch (err) {
-      logOperation(db, `import.${kind}`, path, 'error', String(err));
-      return { ok: false, message: String(err) };
-    } finally {
-      ingestionRunning = false;
-    }
+    if (anyJobRunning) throw new Error('Un altro lavoro è già in corso.');
+    return withJobLock(async () => {
+      const progress = new ThrottledProgress(wc());
+      const jobId = randomUUID();
+      try {
+        const lib =
+          kind === 'traktor'
+            ? readTraktorNml(path)
+            : kind === 'engine'
+              ? readEngineLibrary(path)
+              : readVirtualDjXml(path);
+        const result = importForeignLibrary(db, lib, (done, total) =>
+          progress.update({ jobId, phase: `import-${kind}`, done, total })
+        );
+        progress.finish({ jobId, phase: `import-${kind}`, done: result.tracks, total: result.tracks });
+        logOperation(db, `import.${kind}`, path, 'ok', JSON.stringify(result));
+        return { ok: true, ...result };
+      } catch (err) {
+        progress.finish({ jobId, phase: `import-${kind}`, done: 1, total: 1 });
+        logOperation(db, `import.${kind}`, path, 'error', String(err));
+        return { ok: false, message: String(err) };
+      }
+    });
   });
 
   // ---- ingestion master.db (sidecar Python; sola lettura sul sorgente) ----
   ipcMain.handle(
     'library:ingestMasterdb',
     async (_e, masterDbPath: string, optionsJsonPath?: string) => {
-      if (ingestionRunning) throw new Error('Un\'altra importazione è già in corso.');
+      if (anyJobRunning) throw new Error('Un altro lavoro è già in corso.');
       const check = checkSidecar();
       if (!check.available) {
         return {
@@ -206,7 +240,7 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
             'e importala da qui.'
         };
       }
-      ingestionRunning = true;
+      return withJobLock(async () => {
       const progress = new ThrottledProgress(wc());
       const jobId = randomUUID();
       const args = ['--master-db', masterDbPath];
@@ -248,9 +282,9 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
         logOperation(db, 'ingest.masterdb', masterDbPath, 'ok');
         return { ok: true };
       } finally {
-        ingestionRunning = false;
         currentCancel = null;
       }
+      });
     }
   );
 
@@ -473,35 +507,37 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
     command: string,
     phase: string,
     args: string[]
-  ): Promise<{ ok: boolean; data?: Record<string, unknown>; message?: string }> => {
-    const progress = new ThrottledProgress(wc());
-    const jobId = randomUUID();
-    let doneData: Record<string, unknown> | undefined;
-    let lastError: string | null = null;
-    const handle = runSidecar({
-      command,
-      udmPath,
-      args,
-      onEvent: (ev: SidecarEvent) => {
-        if (ev.type === 'progress') {
-          progress.update({ jobId, phase: ev.phase ?? phase, done: ev.done ?? 0, total: ev.total ?? 0 });
-        } else if (ev.type === 'done') {
-          doneData = ev.data;
-        } else if (ev.type === 'error') {
-          lastError = ev.message ?? 'Errore sconosciuto del sidecar';
+  ): Promise<{ ok: boolean; data?: Record<string, unknown>; message?: string }> =>
+    // Serializzato con ogni altro job che tocca l'UDM (§ coda job unica).
+    withJobLock(() => {
+      const progress = new ThrottledProgress(wc());
+      const jobId = randomUUID();
+      let doneData: Record<string, unknown> | undefined;
+      let lastError: string | null = null;
+      const handle = runSidecar({
+        command,
+        udmPath,
+        args,
+        onEvent: (ev: SidecarEvent) => {
+          if (ev.type === 'progress') {
+            progress.update({ jobId, phase: ev.phase ?? phase, done: ev.done ?? 0, total: ev.total ?? 0 });
+          } else if (ev.type === 'done') {
+            doneData = ev.data;
+          } else if (ev.type === 'error') {
+            lastError = ev.message ?? 'Errore sconosciuto del sidecar';
+          }
         }
-      }
+      });
+      currentCancel = handle.cancel;
+      return handle.finished.then(({ code }) => {
+        progress.finish({ jobId, phase, done: 1, total: 1 });
+        currentCancel = null;
+        if (code !== 0 || !doneData) {
+          return { ok: false as const, message: lastError ?? `Il modulo è terminato con codice ${code}.` };
+        }
+        return { ok: true as const, data: doneData };
+      });
     });
-    currentCancel = handle.cancel;
-    return handle.finished.then(({ code }) => {
-      progress.finish({ jobId, phase, done: 1, total: 1 });
-      currentCancel = null;
-      if (code !== 0 || !doneData) {
-        return { ok: false as const, message: lastError ?? `Il modulo è terminato con codice ${code}.` };
-      }
-      return { ok: true as const, data: doneData };
-    });
-  };
 
   // ---- dedup per fingerprint (Fase 2.2) ----
   ipcMain.handle('dedup:run', async () => {
@@ -594,7 +630,19 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
   ipcMain.handle(
     'cues:save',
     (_e, trackId: number, cues: { label: string; positionMs: number; color: string | null }[]) => {
-      const capped = cues.slice(0, 8); // limite hot cue import XML (§4)
+      // Validazione al confine IPC: il track deve esistere e i cue devono avere
+      // posizione finita >= 0, label troncata, colore #RRGGBB o null. I dati
+      // finiscono poi nell'XML per Rekordbox: niente valori sballati.
+      const exists = db.prepare(`SELECT 1 FROM tracks WHERE id = ?`).get(trackId);
+      if (!exists) throw new Error('Brano inesistente.');
+      const capped = cues
+        .filter((c) => Number.isFinite(c.positionMs) && c.positionMs >= 0)
+        .slice(0, 8) // limite hot cue import XML (§4)
+        .map((c) => ({
+          positionMs: c.positionMs,
+          label: typeof c.label === 'string' ? c.label.slice(0, 100) : null,
+          color: typeof c.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(c.color) ? c.color : null
+        }));
       const tx = db.transaction(() => {
         db.prepare(`DELETE FROM cues WHERE track_id = ? AND cue_type = 'hot'`).run(trackId);
         const ins = db.prepare(
@@ -668,12 +716,18 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
         'backups',
         `id3-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
       );
-      const r = await runSidecarJob('write-tags', 'write-tags', [
-        '--tags-json',
-        JSON.stringify(jobs),
-        '--backup-dir',
-        backupDir
-      ]);
+      const tagsFile = writeTempJson('tags', jobs);
+      let r;
+      try {
+        r = await runSidecarJob('write-tags', 'write-tags', [
+          '--tags-file',
+          tagsFile,
+          '--backup-dir',
+          backupDir
+        ]);
+      } finally {
+        rmSync(tagsFile, { force: true });
+      }
       if (!r.ok) {
         logOperation(db, 'tagger.apply.original', null, 'error', r.message);
         return { ok: false, target: 'original', message: r.message };
@@ -826,14 +880,20 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
       }
       logOperation(db, 'masterdb.backup', backupDir, 'ok', `${basename(masterDbPath)} + options.json`);
 
-      const r = await runSidecarJob('masterdb-create-playlist', 'masterdb-playlist', [
-        '--master-db',
-        masterDbPath,
-        '--playlist-name',
-        playlistName,
-        '--content-ids-json',
-        JSON.stringify(contentIds)
-      ]);
+      const idsFile = writeTempJson('content-ids', contentIds);
+      let r;
+      try {
+        r = await runSidecarJob('masterdb-create-playlist', 'masterdb-playlist', [
+          '--master-db',
+          masterDbPath,
+          '--playlist-name',
+          playlistName,
+          '--content-ids-file',
+          idsFile
+        ]);
+      } finally {
+        rmSync(idsFile, { force: true });
+      }
       if (!r.ok) {
         logOperation(db, 'masterdb.createPlaylist', masterDbPath, 'error', r.message);
         return { ok: false, message: r.message, backupDir };

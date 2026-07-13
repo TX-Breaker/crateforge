@@ -124,6 +124,34 @@ describe.skipIf(!hasVenv)('sidecar write-tags (e2e, §3.4)', () => {
     }
   });
 
+  it('accetta il payload via --tags-file (batch grandi, limite argv Windows)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'crateforge-wt-'));
+    try {
+      const mp3 = join(tmp, 'b.mp3');
+      spawnSync(VENV_PY, [MAKE_FIXTURE, mp3, '--title', 'Old', '--artist', 'A'], {
+        encoding: 'utf-8',
+        timeout: 30_000
+      });
+      const tagsFile = join(tmp, 'tags.json');
+      writeFileSync(tagsFile, JSON.stringify([{ path: mp3, tags: { title: 'Da File' } }]));
+      const { code, events } = runSidecar([
+        'write-tags',
+        '--udm-path',
+        join(tmp, 'udm.sqlite'),
+        '--tags-file',
+        tagsFile,
+        '--backup-dir',
+        join(tmp, 'backup')
+      ]);
+      expect(code).toBe(0);
+      const done = events.find((e) => e.type === 'done') as unknown as { data: WriteTagsDone };
+      expect(done.data.written).toBe(1);
+      expect(readTags(mp3).title).toEqual(['Da File']);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('file inesistente: fallisce pulito senza toccare nulla', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'crateforge-wt-'));
     try {

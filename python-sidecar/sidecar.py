@@ -88,6 +88,17 @@ def fail(message: str, code: int = 1) -> "NoReturn":  # noqa: F821
     sys.exit(code)
 
 
+def _load_json_payload(inline: str | None, file_path: str | None):
+    """Carica un payload JSON da file (preferito) o da stringa inline.
+    Node scrive i payload grossi (write-tags, masterdb) in un file temporaneo
+    per non superare il limite della command line di Windows (~32 KB).
+    """
+    if file_path:
+        with open(file_path, encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(inline or "")
+
+
 # ---------------------------------------------------------------------------
 # Normalizzazioni (specchiano src/core/camelot.ts e versionRegex.ts)
 # ---------------------------------------------------------------------------
@@ -593,26 +604,33 @@ def cmd_analyze_cues(args: argparse.Namespace) -> None:
     if not os.path.exists(path):
         fail(f"File non trovato: {path}")
 
-    hop = 512
-    src = aubio.source(path, 0, hop)
-    sr = src.samplerate
-    onset = aubio.onset("energy", 1024, hop, sr)
-    tempo = aubio.tempo("default", 1024, hop, sr)
+    # File corrotti/formati non supportati sollevano RuntimeError in aubio: va
+    # convertito in un evento JSON error, non un traceback su stderr (che Node
+    # non sa interpretare).
+    try:
+        hop = 512
+        src = aubio.source(path, 0, hop)
+        sr = src.samplerate
+        onset = aubio.onset("energy", 1024, hop, sr)
+        tempo = aubio.tempo("default", 1024, hop, sr)
 
-    onsets_s: list[float] = []
-    energies: list[float] = []
-    total_frames = 0
-    while True:
-        samples, read = src()
-        if onset(samples):
-            onsets_s.append(onset.get_last_s())
-        tempo(samples)
-        energies.append(float(np.sqrt(np.mean(samples**2))))
-        total_frames += read
-        if read < hop:
-            break
-    duration = total_frames / sr
-    bpm = float(tempo.get_bpm()) or None
+        onsets_s: list[float] = []
+        energies: list[float] = []
+        total_frames = 0
+        while True:
+            samples, read = src()
+            if onset(samples):
+                onsets_s.append(onset.get_last_s())
+            tempo(samples)
+            energies.append(float(np.sqrt(np.mean(samples**2))))
+            total_frames += read
+            if read < hop:
+                break
+        duration = total_frames / sr if sr else 0.0
+        bpm = float(tempo.get_bpm()) or None
+    except Exception as exc:  # noqa: BLE001
+        fail(f"Analisi audio non riuscita ({os.path.basename(path)}): {str(exc)[:200]}")
+        return
 
     # Profilo d'energia a finestre da ~1s → intro/drop/breakdown/outro euristici.
     win = max(1, int(sr / hop))
@@ -692,9 +710,9 @@ def cmd_write_tags(args: argparse.Namespace) -> None:
     import shutil
 
     try:
-        jobs = json.loads(args.tags_json)
+        jobs = _load_json_payload(args.tags_json, getattr(args, "tags_file", None))
         assert isinstance(jobs, list)
-    except (json.JSONDecodeError, AssertionError):
+    except (json.JSONDecodeError, AssertionError, OSError):
         fail("--tags-json non valido: atteso un array [{path, tags{}}].")
         return
     os.makedirs(args.backup_dir, exist_ok=True)
@@ -777,9 +795,9 @@ def cmd_masterdb_create_playlist(args: argparse.Namespace) -> None:
         return
 
     try:
-        content_ids = json.loads(args.content_ids_json)
+        content_ids = _load_json_payload(args.content_ids_json, getattr(args, "content_ids_file", None))
         assert isinstance(content_ids, list)
-    except (json.JSONDecodeError, AssertionError):
+    except (json.JSONDecodeError, AssertionError, OSError):
         fail("--content-ids-json non valido: atteso un array di ID contenuto.")
         return
 
@@ -921,7 +939,8 @@ def main() -> None:
 
     p_wt = sub.add_parser("write-tags")
     p_wt.add_argument("--udm-path", required=True)
-    p_wt.add_argument("--tags-json", required=True)
+    p_wt.add_argument("--tags-json", required=False)
+    p_wt.add_argument("--tags-file", required=False)
     p_wt.add_argument("--backup-dir", required=True)
 
     p_dk = sub.add_parser("download-key")
@@ -931,7 +950,8 @@ def main() -> None:
     p_mcp.add_argument("--udm-path", required=True)
     p_mcp.add_argument("--master-db", required=True)
     p_mcp.add_argument("--playlist-name", required=True)
-    p_mcp.add_argument("--content-ids-json", required=True)
+    p_mcp.add_argument("--content-ids-json", required=False)
+    p_mcp.add_argument("--content-ids-file", required=False)
     p_mcp.add_argument("--key", required=False, default="")
 
     args = parser.parse_args()
