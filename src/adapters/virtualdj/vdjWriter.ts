@@ -45,6 +45,13 @@ export function writeVirtualDjXml(
           Num: String(c.cue_index + 1),
           Type: 'cue'
         });
+      } else if (c.cue_type === 'loop' && c.length_ms !== null) {
+        song.ele('Poi', {
+          Name: c.label ?? 'Loop',
+          Pos: (c.position_ms / 1000).toFixed(4),
+          Size: (c.length_ms / 1000).toFixed(4),
+          Type: 'loop'
+        });
       }
     }
     count++;

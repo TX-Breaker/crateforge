@@ -44,6 +44,17 @@ export function writeRekordboxXml(
       Mix: t.version_label ?? '',
       Location: t.path ? pathToLocation(t.path) : ''
     });
+    // Beatgrid: senza un TEMPO Rekordbox importa il brano senza griglia. Non
+    // avendo i marker di griglia originali, ancoriamo una griglia a BPM
+    // costante dall'inizio (meglio di nessuna griglia; l'utente può correggerla).
+    if (t.bpm !== null && t.bpm > 0) {
+      trackEle.ele('TEMPO', {
+        Inizio: '0.000',
+        Bpm: t.bpm.toFixed(2),
+        Metro: '4/4',
+        Battito: '1'
+      });
+    }
     // Max 8 hot cue: il limite va applicato QUI, non lasciato all'import.
     const cues = getCuesForTrack(db, t.id);
     let hotCues = 0;

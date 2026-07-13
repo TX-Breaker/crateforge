@@ -66,6 +66,20 @@ describe('writeRekordboxXml', () => {
     const tracks = doc.DJ_PLAYLISTS.COLLECTION.TRACK as Record<string, string>[];
     expect(tracks[0]['@_Location']).toMatch(/^file:\/\/localhost\//);
   });
+
+  it('scrive una beatgrid TEMPO quando c è il BPM', () => {
+    const out = join(tmp, 'rb.xml');
+    writeRekordboxXml(db, out);
+    const doc = parse(out);
+    const tracks = doc.DJ_PLAYLISTS.COLLECTION.TRACK as Record<string, unknown>[];
+    const withBpm = tracks.find((t) => t['@_AverageBpm'] && t['@_AverageBpm'] !== '');
+    expect(withBpm).toBeDefined();
+    const tempo = withBpm!.TEMPO as Record<string, string>;
+    expect(tempo).toBeDefined();
+    expect(tempo['@_Inizio']).toBe('0.000');
+    expect(Number(tempo['@_Bpm'])).toBeGreaterThan(0);
+    expect(tempo['@_Metro']).toBe('4/4');
+  });
 });
 
 describe('writeTraktorNml', () => {
@@ -76,6 +90,17 @@ describe('writeTraktorNml', () => {
     const doc = parse(out);
     expect(doc.NML['@_VERSION']).toBeDefined();
     expect(doc.NML.COLLECTION.ENTRY).toHaveLength(4);
+  });
+
+  it('esporta grid marker (TYPE 4) e memory cue (HOTCUE -1)', () => {
+    const out = join(tmp, 'traktor.nml');
+    writeTraktorNml(db, out);
+    const doc = parse(out);
+    const entries = doc.NML.COLLECTION.ENTRY as Record<string, unknown>[];
+    const levels = entries.find((e) => String(e['@_TITLE']).startsWith('Levels'))!;
+    const cues = ([] as Record<string, string>[]).concat(levels.CUE_V2 as never);
+    expect(cues.some((c) => c['@_TYPE'] === '4')).toBe(true); // grid marker
+    expect(cues.some((c) => c['@_HOTCUE'] === '-1')).toBe(true); // memory/loop non-hotcue
   });
 });
 

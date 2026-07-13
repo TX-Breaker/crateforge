@@ -51,6 +51,16 @@ export function writeTraktorNml(
     if (t.musical_key) {
       entry.ele('MUSICAL_KEY', { VALUE: t.musical_key });
     }
+    // Grid marker (TYPE 4): àncora la beatgrid all'inizio quando c'è il BPM.
+    if (t.bpm !== null && t.bpm > 0) {
+      entry.ele('CUE_V2', {
+        NAME: 'Beat Marker',
+        TYPE: '4',
+        START: '0.000000',
+        LEN: '0.000000',
+        HOTCUE: '-1'
+      });
+    }
     for (const c of getCuesForTrack(db, t.id)) {
       if (c.cue_type === 'hot' && c.cue_index !== null && c.cue_index < 8) {
         entry.ele('CUE_V2', {
@@ -59,6 +69,15 @@ export function writeTraktorNml(
           START: c.position_ms.toFixed(3),
           LEN: '0.000000',
           HOTCUE: String(c.cue_index)
+        });
+      } else if (c.cue_type === 'memory') {
+        // Memory cue → cue non-hotcue (HOTCUE=-1): sopravvive al round-trip.
+        entry.ele('CUE_V2', {
+          NAME: c.label ?? 'Memory',
+          TYPE: '0',
+          START: c.position_ms.toFixed(3),
+          LEN: '0.000000',
+          HOTCUE: '-1'
         });
       } else if (c.cue_type === 'loop' && c.length_ms !== null) {
         entry.ele('CUE_V2', {
