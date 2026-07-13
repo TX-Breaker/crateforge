@@ -46,7 +46,9 @@ export const pages: Record<Locale, PageDict> = {
       foreignVirtualdj: 'Importa database VirtualDJ (.xml)',
       foreignEngine: 'Importa Engine DJ (m.db)',
       foreignOk: 'Importati {tracks} brani, {playlists} playlist, {cues} cue.',
-      foreignErr: 'Importazione non riuscita: {msg}'
+      foreignErr: 'Importazione non riuscita: {msg}',
+      xmlOk: 'Importazione completata: {tracks} brani, {playlists} playlist, {cues} cue.',
+      masterOk: 'Libreria letta correttamente dal database Rekordbox.'
     },
     backup: {
       title: 'Backup Smart Incrementale',
@@ -511,7 +513,9 @@ export const pages: Record<Locale, PageDict> = {
       foreignVirtualdj: 'Import VirtualDJ database (.xml)',
       foreignEngine: 'Import Engine DJ (m.db)',
       foreignOk: 'Imported {tracks} tracks, {playlists} playlists, {cues} cues.',
-      foreignErr: 'Import failed: {msg}'
+      foreignErr: 'Import failed: {msg}',
+      xmlOk: 'Import complete: {tracks} tracks, {playlists} playlists, {cues} cues.',
+      masterOk: 'Library read successfully from the Rekordbox database.'
     },
     backup: {
       title: 'Smart Incremental Backup',
@@ -976,7 +980,9 @@ export const pages: Record<Locale, PageDict> = {
       foreignVirtualdj: 'Importer la base VirtualDJ (.xml)',
       foreignEngine: 'Importer Engine DJ (m.db)',
       foreignOk: '{tracks} titres, {playlists} playlists, {cues} cues importés.',
-      foreignErr: "Échec de l'import : {msg}"
+      foreignErr: "Échec de l'import : {msg}",
+      xmlOk: 'Import terminé : {tracks} titres, {playlists} playlists, {cues} cues.',
+      masterOk: 'Bibliothèque lue avec succès depuis la base Rekordbox.'
     },
     backup: {
       title: 'Sauvegarde intelligente incrémentale',
@@ -1441,7 +1447,9 @@ export const pages: Record<Locale, PageDict> = {
       foreignVirtualdj: 'VirtualDJ-Datenbank importieren (.xml)',
       foreignEngine: 'Engine DJ importieren (m.db)',
       foreignOk: '{tracks} Titel, {playlists} Playlists, {cues} Cues importiert.',
-      foreignErr: 'Import fehlgeschlagen: {msg}'
+      foreignErr: 'Import fehlgeschlagen: {msg}',
+      xmlOk: 'Import abgeschlossen: {tracks} Titel, {playlists} Playlists, {cues} Cues.',
+      masterOk: 'Bibliothek erfolgreich aus der Rekordbox-Datenbank gelesen.'
     },
     backup: {
       title: 'Intelligentes inkrementelles Backup',

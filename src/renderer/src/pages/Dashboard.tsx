@@ -22,7 +22,7 @@ interface Stats {
  */
 export function Dashboard() {
   const { locale } = useAppState();
-  const tp = (key: string) => pageText(locale, 'dashboard', key);
+  const tp = (key: string, p?: Record<string, string | number>) => pageText(locale, 'dashboard', key, p);
   const [stats, setStats] = useState<Stats | null>(null);
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,11 +49,11 @@ export function Dashboard() {
       const r = await window.crateforge.library.ingestXml(path);
       setMessage({
         kind: 'info',
-        text: `Importazione completata: ${r.tracks} brani, ${r.playlists} playlist, ${r.cues} cue.`
+        text: tp('xmlOk', { tracks: r.tracks, playlists: r.playlists, cues: r.cues })
       });
       await refresh();
     } catch (err) {
-      setMessage({ kind: 'error', text: `Importazione non riuscita: ${String(err)}` });
+      setMessage({ kind: 'error', text: tp('foreignErr', { msg: String(err) }) });
     } finally {
       setBusy(false);
     }
@@ -101,11 +101,14 @@ export function Dashboard() {
     try {
       const r = await window.crateforge.library.ingestMasterdb(dbPath);
       if (r.ok) {
-        setMessage({ kind: 'info', text: 'Libreria letta correttamente dal database Rekordbox.' });
+        setMessage({ kind: 'info', text: tp('masterOk') });
       } else {
         setMessage({ kind: 'warn', text: r.message });
       }
       await refresh();
+    } catch (err) {
+      // Senza questo catch un errore IPC lasciava la barra ferma e nessun messaggio.
+      setMessage({ kind: 'error', text: pageText(locale, 'dashboard', 'foreignErr', { msg: String(err) }) });
     } finally {
       setBusy(false);
     }
@@ -202,7 +205,7 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
       <CardContent className="flex items-center gap-4 p-5">
         <div className="text-muted-foreground [&_svg]:h-8 [&_svg]:w-8">{icon}</div>
         <div>
-          <div className="text-2xl font-semibold">{typeof value === 'number' ? value.toLocaleString('it-IT') : value}</div>
+          <div className="text-2xl font-semibold">{typeof value === 'number' ? value.toLocaleString() : value}</div>
           <div className="text-xs text-muted-foreground">{label}</div>
         </div>
       </CardContent>
