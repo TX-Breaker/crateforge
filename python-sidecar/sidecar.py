@@ -386,9 +386,12 @@ def _ingest_playlists(rb, udm: sqlite3.Connection) -> None:
         except Exception:
             continue
         udm.execute("DELETE FROM playlist_tracks WHERE playlist_id=?", (id_map[str(pid)],))
-        for song in songs:
+        # position = indice progressivo, NON il TrackNo di Rekordbox: la PK di
+        # playlist_tracks è (playlist_id, position), quindi due song con lo
+        # stesso TrackNo (o senza) collasserebbero su una sola riga e i brani
+        # verrebbero persi. L'ordine segue quello dei song (già ordinati da rb).
+        for idx, song in enumerate(songs):
             content_id = _get(song, "ContentID")
-            seq = _get(song, "TrackNo", "Seq") or 0
             if content_id is None:
                 continue
             row = udm.execute(
@@ -399,7 +402,7 @@ def _ingest_playlists(rb, udm: sqlite3.Connection) -> None:
                 udm.execute(
                     """INSERT OR REPLACE INTO playlist_tracks
                        (playlist_id, track_id, position) VALUES (?, ?, ?)""",
-                    (id_map[str(pid)], row[0], int(seq)),
+                    (id_map[str(pid)], row[0], idx),
                 )
 
 
@@ -888,13 +891,35 @@ def cmd_stems(args: argparse.Namespace) -> None:
         )
         return
     emit({"type": "log", "message": "Separazione stem avviata (operazione lunga)…"})
-    out = subprocess.run(
-        [sys.executable, "-m", "demucs", "--out", args.out_dir, args.file],
-        capture_output=True,
-        text=True,
-    )
-    if out.returncode != 0:
-        fail(f"Demucs exit {out.returncode}: {out.stderr.strip()[-500:]}")
+    # In build PyInstaller frozen sys.executable è il sidecar stesso, non un
+    # interprete Python: "sidecar -m demucs" non funziona. Chiama Demucs in
+    #-process; se non disponibile in questa build, errore chiaro.
+    if getattr(sys, "frozen", False):
+        try:
+            from demucs.separate import main as demucs_main  # type: ignore
+        except ImportError:
+            fail(
+                "Gli stem richiedono il sidecar con il livello AI (script/venv), "
+                "non disponibile in questa build compilata."
+            )
+            return
+        try:
+            demucs_main(["--out", args.out_dir, args.file])
+        except SystemExit as exc:  # demucs usa argparse → SystemExit
+            if exc.code not in (0, None):
+                fail(f"Demucs terminato con codice {exc.code}")
+                return
+        except Exception as exc:  # noqa: BLE001
+            fail(f"Demucs: {str(exc)[:300]}")
+            return
+    else:
+        out = subprocess.run(
+            [sys.executable, "-m", "demucs", "--out", args.out_dir, args.file],
+            capture_output=True,
+            text=True,
+        )
+        if out.returncode != 0:
+            fail(f"Demucs exit {out.returncode}: {out.stderr.strip()[-500:]}")
     emit({"type": "done", "data": {"outDir": args.out_dir}})
 
 
