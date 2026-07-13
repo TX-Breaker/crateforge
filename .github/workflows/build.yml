@@ -3,15 +3,47 @@ name: Build CrateForge
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
+# Un push/PR che ne annulla uno precedente sullo stesso ref evita build doppie.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Gate rapido e a basso costo: typecheck + test su Linux, prima di impacchettare.
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crateforge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crateforge/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+
   build:
+    needs: check
+    # Impacchetta solo su push/dispatch: le PR passano dal gate `check`, non
+    # serve produrre artefatti (lenti) a ogni PR.
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # macos-latest = arm64 (Apple Silicon); macos-13 = x64 (Intel).
+        os: [macos-latest, macos-13, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: crateforge
@@ -27,6 +59,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: crateforge/python-sidecar/requirements.txt
 
       - name: Install Node dependencies
         run: npm ci
@@ -39,8 +73,21 @@ jobs:
         if: runner.os == 'Windows'
         run: powershell -ExecutionPolicy Bypass -File python-sidecar/build_sidecar.ps1
 
-      - name: Run tests
-        run: npm test
+      # Il build script del sidecar degrada a solo-warning se il download di
+      # fpcalc fallisce: qui invece fallisce il job, cosi' non si pubblica un
+      # artefatto senza fingerprinting o senza sidecar.
+      - name: Verify sidecar artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          test -f python-sidecar/dist/crateforge-sidecar/crateforge-sidecar
+          test -f python-sidecar/dist/crateforge-sidecar/fpcalc
+
+      - name: Verify sidecar artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path python-sidecar/dist/crateforge-sidecar/crateforge-sidecar.exe)) { exit 1 }
+          if (-not (Test-Path python-sidecar/dist/crateforge-sidecar/fpcalc.exe)) { exit 1 }
+        shell: pwsh
 
       - name: Build app
         run: npm run build
@@ -54,6 +101,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: crateforge-${{ matrix.os }}
+          retention-days: 14
           path: |
             crateforge/release/*.dmg
             crateforge/release/*.zip
