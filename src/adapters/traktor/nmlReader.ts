@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import type { ForeignLibrary, NormCue, NormPlaylist, NormTrack } from '@core/foreignImport';
 import { TRAKTOR_KEY } from './traktorKeys';
 
@@ -16,7 +16,16 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
-/** VOLUME "C:" + DIR "/:Music/:House/:" + FILE "a.mp3" → C:\Music\House\a.mp3. */
+/**
+ * VOLUME "C:" + DIR "/:Music/:House/:" + FILE "a.mp3" → C:\Music\House\a.mp3.
+ *
+ * Bug B2 (roadmap §4.2): su macOS Traktor mette in VOLUME il NOME del volume
+ * (es. "Macintosh HD" per il disco di boot, "USB_DJ" per un drive esterno).
+ * Il boot monta a "/"; i drive esterni sotto "/Volumes/<nome>". La vecchia
+ * versione scartava il volume e ricostruiva sempre da "/", spezzando i path su
+ * drive non-boot. Ora distinguiamo boot vs esterno controllando dove il volume
+ * è realmente montato.
+ */
 export function traktorLocationToPath(
   volume: string | undefined,
   dir: string | undefined,
@@ -27,13 +36,26 @@ export function traktorLocationToPath(
     .split('/:')
     .map((s) => s.replace(/^\/+/, ''))
     .filter(Boolean);
+  const rel = [...parts, file].join('/');
   const vol = volume ?? '';
   if (/^[A-Za-z]:$/.test(vol)) {
-    // Windows
-    return `${vol}\\${[...parts, file].join('\\')}`;
+    return `${vol}\\${[...parts, file].join('\\')}`; // Windows: "C:" + backslash
   }
-  // macOS/Linux: percorso assoluto
-  return `/${[...parts, file].join('/')}`;
+  const bootPath = `/${rel}`;
+  if (!vol) return bootPath;
+  // Un volume è "boot" solo se lo si CONFERMA (macOS espone il boot come
+  // /Volumes/<nome> → symlink a "/"). Se non è confermato boot lo trattiamo come
+  // ESTERNO: così un drive scollegato (o un NML da un'altra macchina) risolve
+  // deterministicamente a /Volumes/<vol>/… invece di ripiegare per errore sul
+  // disco di boot (dove poteva agganciare il file sbagliato).
+  const volMount = `/Volumes/${vol}`;
+  let isBoot = false;
+  try {
+    isBoot = existsSync(volMount) && realpathSync(volMount) === '/';
+  } catch {
+    isBoot = false;
+  }
+  return isBoot ? bootPath : `${volMount}/${rel}`;
 }
 
 // CUE_V2 TYPE: 0=cue, 1=fade-in, 2=fade-out, 3=load, 4=grid, 5=loop.
@@ -120,12 +142,20 @@ export function readTraktorNml(nmlPath: string): ForeignLibrary {
 
   // Playlist: albero PLAYLISTS → NODE (FOLDER/PLAYLIST).
   const playlists: NormPlaylist[] = [];
+  const smartlists: string[] = [];
   const rootNode = nml.PLAYLISTS?.NODE;
   let counter = 0;
   const walk = (node: Record<string, unknown>, parentId: string | null): void => {
     const type = node['@_TYPE'];
     const name = (node['@_NAME'] as string) ?? 'Senza nome';
     const sid = `pl${counter++}`;
+    if (type === 'SMARTLIST') {
+      // Playlist intelligente (query dinamica): i criteri (SEARCH_EXPRESSION) non
+      // sono materializzabili senza valutarli sulla collezione. La segnaliamo
+      // invece di ignorarla in silenzio (roadmap §7.7).
+      smartlists.push(name);
+      return;
+    }
     if (type === 'FOLDER') {
       // Salta la radice tecnica "$ROOT" ma percorri i figli.
       const isRoot = name === '$ROOT';
@@ -150,6 +180,11 @@ export function readTraktorNml(nmlPath: string): ForeignLibrary {
   };
   for (const n of asArray(rootNode)) walk(n as Record<string, unknown>, null);
 
+  if (smartlists.length > 0) {
+    warnings.push(
+      `Traktor: ${smartlists.length} playlist intelligenti non importate (criteri dinamici non valutati): ${smartlists.slice(0, 5).join(', ')}${smartlists.length > 5 ? '…' : ''}.`
+    );
+  }
   if (tracks.length === 0) warnings.push('Nessun brano trovato nel file NML.');
   return { source: 'traktor', tracks, playlists, warnings };
 }

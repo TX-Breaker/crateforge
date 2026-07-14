@@ -48,7 +48,17 @@ export const pages: Record<Locale, PageDict> = {
       foreignOk: 'Importati {tracks} brani, {playlists} playlist, {cues} cue.',
       foreignErr: 'Importazione non riuscita: {msg}',
       xmlOk: 'Importazione completata: {tracks} brani, {playlists} playlist, {cues} cue.',
-      masterOk: 'Libreria letta correttamente dal database Rekordbox.'
+      masterOk: 'Libreria letta correttamente dal database Rekordbox.',
+      importDbDetected: 'Leggi il master.db di Rekordbox',
+      masterDetectedAt: 'master.db di Rekordbox rilevato: {path}.',
+      chooseOtherDb: 'Scegli un altro file…',
+      pfTitle: 'Controllo iniziale',
+      pfSidecarBroken: 'Il modulo di lettura diretta del database è installato ma non si avvia su questo computer.',
+      pfSidecarOsChanged:
+        'Dopo un aggiornamento del sistema il modulo di lettura non si avvia più: potrebbe dover essere ri-autorizzato (apri CrateForge con tasto destro → Apri, oppure controlla Impostazioni di Sistema → Privacy e sicurezza).',
+      pfKeyMissing:
+        'Chiave di lettura del master.db non ancora disponibile: al primo avvio serve una connessione a internet per scaricarla (una volta sola).',
+      pfRetry: 'Riprova ora'
     },
     backup: {
       title: 'Backup Smart Incrementale',
@@ -129,6 +139,13 @@ export const pages: Record<Locale, PageDict> = {
       proceed: "Continua con l'export",
       outDone: 'Export {fmt} completato: {n} brani in {path}.',
       outRbTail: " Ora apri Rekordbox, imposta questo file in Preferenze → Avanzate → rekordbox xml, poi clicca tu 'Import to Collection': l'import finale è manuale.",
+      directTitle: 'Conversione diretta X → Y',
+      directDesc:
+        'Scegli il software di partenza e quello di arrivo: CrateForge importa la libreria e la converte, senza passaggi manuali. Vengono convertiti brani, playlist e hot cue/loop (dove il formato lo consente).',
+      srcLabel: 'Da (software di partenza)',
+      dstLabel: 'A (software di arrivo)',
+      convertBtn: 'Converti',
+      convErr: 'Conversione non riuscita.',
       matrixTitle: 'Cosa si converte, in che direzione',
       matrixDesc: 'CrateForge usa la sua libreria interna come ponte: importi da un software e esporti verso un altro. Ecco cosa è supportato oggi.',
       colSoftware: 'Software',
@@ -552,7 +569,17 @@ export const pages: Record<Locale, PageDict> = {
       foreignOk: 'Imported {tracks} tracks, {playlists} playlists, {cues} cues.',
       foreignErr: 'Import failed: {msg}',
       xmlOk: 'Import complete: {tracks} tracks, {playlists} playlists, {cues} cues.',
-      masterOk: 'Library read successfully from the Rekordbox database.'
+      masterOk: 'Library read successfully from the Rekordbox database.',
+      importDbDetected: 'Read your Rekordbox master.db',
+      masterDetectedAt: 'Rekordbox master.db detected: {path}.',
+      chooseOtherDb: 'Choose another file…',
+      pfTitle: 'Startup check',
+      pfSidecarBroken: 'The direct-read module is installed but does not start on this computer.',
+      pfSidecarOsChanged:
+        'After a system update the read module no longer starts: it may need to be re-authorized (right-click CrateForge → Open, or check System Settings → Privacy & Security).',
+      pfKeyMissing:
+        "The master.db read key isn't available yet: on first launch an internet connection is needed to download it (just once).",
+      pfRetry: 'Retry now'
     },
     backup: {
       title: 'Smart Incremental Backup',
@@ -633,6 +660,13 @@ export const pages: Record<Locale, PageDict> = {
       proceed: 'Continue with the export',
       outDone: '{fmt} export complete: {n} tracks in {path}.',
       outRbTail: " Now open Rekordbox, set this file in Preferences → Advanced → rekordbox xml, then click 'Import to Collection' yourself: the final import is manual.",
+      directTitle: 'Direct conversion X → Y',
+      directDesc:
+        'Pick the source and target software: CrateForge imports the library and converts it, with no manual steps. Tracks, playlists and hot cues/loops are converted (where the format allows).',
+      srcLabel: 'From (source software)',
+      dstLabel: 'To (target software)',
+      convertBtn: 'Convert',
+      convErr: 'Conversion failed.',
       matrixTitle: 'What converts, in which direction',
       matrixDesc: 'CrateForge uses its internal library as a bridge: import from one software and export to another. Here is what is supported today.',
       colSoftware: 'Software',
@@ -1056,7 +1090,17 @@ export const pages: Record<Locale, PageDict> = {
       foreignOk: '{tracks} titres, {playlists} playlists, {cues} cues importés.',
       foreignErr: "Échec de l'import : {msg}",
       xmlOk: 'Import terminé : {tracks} titres, {playlists} playlists, {cues} cues.',
-      masterOk: 'Bibliothèque lue avec succès depuis la base Rekordbox.'
+      masterOk: 'Bibliothèque lue avec succès depuis la base Rekordbox.',
+      importDbDetected: 'Lire le master.db de Rekordbox',
+      masterDetectedAt: 'master.db Rekordbox détecté : {path}.',
+      chooseOtherDb: 'Choisir un autre fichier…',
+      pfTitle: 'Vérification au démarrage',
+      pfSidecarBroken: 'Le module de lecture directe est installé mais ne démarre pas sur cet ordinateur.',
+      pfSidecarOsChanged:
+        'Après une mise à jour du système, le module de lecture ne démarre plus : il peut devoir être ré-autorisé (clic droit sur CrateForge → Ouvrir, ou Réglages Système → Confidentialité et sécurité).',
+      pfKeyMissing:
+        "La clé de lecture du master.db n'est pas encore disponible : au premier lancement, une connexion internet est nécessaire pour la télécharger (une seule fois).",
+      pfRetry: 'Réessayer'
     },
     backup: {
       title: 'Sauvegarde intelligente incrémentale',
@@ -1137,6 +1181,13 @@ export const pages: Record<Locale, PageDict> = {
       proceed: "Continuer l'export",
       outDone: 'Export {fmt} terminé : {n} titres dans {path}.',
       outRbTail: " Ouvrez maintenant Rekordbox, définissez ce fichier dans Préférences → Avancées → rekordbox xml, puis cliquez vous-même sur 'Import to Collection' : l'import final est manuel.",
+      directTitle: 'Conversion directe X → Y',
+      directDesc:
+        'Choisissez le logiciel de départ et d’arrivée : CrateForge importe la bibliothèque et la convertit, sans étapes manuelles. Pistes, playlists et hot cues/boucles sont convertis (selon le format).',
+      srcLabel: 'De (logiciel source)',
+      dstLabel: 'Vers (logiciel cible)',
+      convertBtn: 'Convertir',
+      convErr: 'Échec de la conversion.',
       matrixTitle: 'Ce qui se convertit, dans quel sens',
       matrixDesc: 'CrateForge utilise sa bibliothèque interne comme pont : importez depuis un logiciel et exportez vers un autre. Voici ce qui est pris en charge aujourd\'hui.',
       colSoftware: 'Logiciel',
@@ -1560,7 +1611,17 @@ export const pages: Record<Locale, PageDict> = {
       foreignOk: '{tracks} Titel, {playlists} Playlists, {cues} Cues importiert.',
       foreignErr: 'Import fehlgeschlagen: {msg}',
       xmlOk: 'Import abgeschlossen: {tracks} Titel, {playlists} Playlists, {cues} Cues.',
-      masterOk: 'Bibliothek erfolgreich aus der Rekordbox-Datenbank gelesen.'
+      masterOk: 'Bibliothek erfolgreich aus der Rekordbox-Datenbank gelesen.',
+      importDbDetected: 'Rekordbox master.db lesen',
+      masterDetectedAt: 'Rekordbox master.db erkannt: {path}.',
+      chooseOtherDb: 'Andere Datei wählen…',
+      pfTitle: 'Startprüfung',
+      pfSidecarBroken: 'Das Modul zum direkten Lesen ist installiert, startet aber auf diesem Computer nicht.',
+      pfSidecarOsChanged:
+        'Nach einem Systemupdate startet das Lesemodul nicht mehr: Es muss evtl. neu autorisiert werden (Rechtsklick auf CrateForge → Öffnen, oder Systemeinstellungen → Datenschutz & Sicherheit).',
+      pfKeyMissing:
+        'Der Leseschlüssel für die master.db ist noch nicht verfügbar: Beim ersten Start ist eine Internetverbindung nötig, um ihn (einmalig) herunterzuladen.',
+      pfRetry: 'Erneut versuchen'
     },
     backup: {
       title: 'Intelligentes inkrementelles Backup',
@@ -1641,6 +1702,13 @@ export const pages: Record<Locale, PageDict> = {
       proceed: 'Mit dem Export fortfahren',
       outDone: '{fmt}-Export abgeschlossen: {n} Titel in {path}.',
       outRbTail: " Öffne jetzt Rekordbox, hinterlege diese Datei unter Einstellungen → Erweitert → rekordbox xml und klicke selbst auf 'Import to Collection': der finale Import ist manuell.",
+      directTitle: 'Direkte Konvertierung X → Y',
+      directDesc:
+        'Wähle Quell- und Zielsoftware: CrateForge importiert die Bibliothek und konvertiert sie ohne manuelle Schritte. Tracks, Playlists und Hot Cues/Loops werden konvertiert (soweit das Format es erlaubt).',
+      srcLabel: 'Von (Quellsoftware)',
+      dstLabel: 'Nach (Zielsoftware)',
+      convertBtn: 'Konvertieren',
+      convErr: 'Konvertierung fehlgeschlagen.',
       matrixTitle: 'Was konvertiert wird, in welche Richtung',
       matrixDesc: 'CrateForge nutzt seine interne Bibliothek als Brücke: aus einer Software importieren und in eine andere exportieren. Das wird heute unterstützt.',
       colSoftware: 'Software',

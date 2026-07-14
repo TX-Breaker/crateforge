@@ -23,6 +23,9 @@ export interface PlaylistRow {
 export interface ExportSelection {
   /** id playlist da esportare; vuoto = tutte */
   playlistIds?: number[];
+  /** limita l'export ai brani/playlist di questa sorgente (per conversione X→Y);
+   *  vuoto = tutta la libreria UDM (hub) */
+  source?: string;
 }
 
 /** Limiti del canale XML Rekordbox (§4): da mostrare PRIMA di ogni export. */
@@ -41,13 +44,21 @@ export function* iterateTracks(
   db: BetterSqlite3.Database,
   sel: ExportSelection
 ): Generator<TrackRow> {
-  const inPlaylists = sel.playlistIds && sel.playlistIds.length > 0;
-  const where = inPlaylists
-    ? `WHERE t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id IN (${sel
-        .playlistIds!.map(() => '?')
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (sel.source) {
+    conds.push('t.source = ?');
+    params.push(sel.source);
+  }
+  if (sel.playlistIds && sel.playlistIds.length > 0) {
+    conds.push(
+      `t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id IN (${sel.playlistIds
+        .map(() => '?')
         .join(',')}))`
-    : '';
-  const params = inPlaylists ? sel.playlistIds! : [];
+    );
+    params.push(...sel.playlistIds);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const total = (
     db.prepare(`SELECT COUNT(*) AS c FROM tracks t ${where}`).get(...params) as { c: number }
   ).c;
@@ -70,6 +81,13 @@ export function getPlaylists(db: BetterSqlite3.Database, sel: ExportSelection): 
     const q = `SELECT id, name, parent_id, is_folder, sort_order FROM playlists
                WHERE id IN (${sel.playlistIds.map(() => '?').join(',')}) ORDER BY sort_order`;
     return db.prepare(q).all(...sel.playlistIds) as PlaylistRow[];
+  }
+  if (sel.source) {
+    return db
+      .prepare(
+        `SELECT id, name, parent_id, is_folder, sort_order FROM playlists WHERE source = ? ORDER BY sort_order`
+      )
+      .all(sel.source) as PlaylistRow[];
   }
   return db
     .prepare(`SELECT id, name, parent_id, is_folder, sort_order FROM playlists ORDER BY sort_order`)

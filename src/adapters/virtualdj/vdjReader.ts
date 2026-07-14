@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
-import { readFileSync } from 'fs';
-import type { ForeignLibrary, NormCue, NormTrack } from '@core/foreignImport';
+import { readFileSync, readdirSync } from 'fs';
+import { dirname, join } from 'path';
+import type { ForeignLibrary, NormCue, NormPlaylist, NormTrack } from '@core/foreignImport';
 
 /**
  * Reader VirtualDJ database.xml → modello normalizzato.
@@ -26,22 +27,96 @@ export function vdjBpm(raw: string | undefined): number | null {
   return v < 10 ? 60 / v : v;
 }
 
+/** Colore VirtualDJ ("#RRGGBB", "0xRRGGBB" o intero) → "#RRGGBB", o null. */
+function vdjColor(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toUpperCase();
+  const n = s.startsWith('0x') ? parseInt(s.slice(2), 16) : Number(s);
+  if (!Number.isFinite(n)) return null;
+  return '#' + (n & 0xffffff).toString(16).padStart(6, '0').toUpperCase();
+}
+
 function mapPoi(p: Record<string, string>): NormCue | null {
   const pos = Number(p['@_Pos']);
   if (Number.isNaN(pos)) return null;
   const type = (p['@_Type'] || 'cue').toLowerCase();
-  if (type !== 'cue' && type !== 'loop' && type !== 'hotcue') return null; // salta beatgrid/remix/automix
   const size = p['@_Size'] !== undefined ? Number(p['@_Size']) : 0;
   const num = p['@_Num'] !== undefined ? Number(p['@_Num']) : NaN;
-  const isLoop = type === 'loop' || size > 0;
-  return {
-    type: isLoop ? 'loop' : 'hot',
-    index: !isLoop && !Number.isNaN(num) ? Math.max(0, num - 1) : null,
-    positionMs: pos * 1000,
-    lengthMs: isLoop && size > 0 ? size * 1000 : null,
-    color: null,
-    label: p['@_Name'] || null
+  const color = vdjColor(p['@_Color']);
+  if (type === 'cue' || type === 'hotcue' || type === 'loop') {
+    const isLoop = type === 'loop' || size > 0;
+    return {
+      type: isLoop ? 'loop' : 'hot',
+      index: !isLoop && !Number.isNaN(num) ? Math.max(0, num - 1) : null,
+      positionMs: pos * 1000,
+      lengthMs: isLoop && size > 0 ? size * 1000 : null,
+      color,
+      label: p['@_Name'] || null
+    };
+  }
+  // POI automix/remix (roadmap §7.6): prima scartati del tutto. Portiamo i
+  // marcatori utili come memory cue — l'inizio reale del brano (automix
+  // realStart) e i punti remix — saltando i punti interni al mixer
+  // (fade/cut/tempo/realEnd) e la beatgrid.
+  const point = (p['@_Point'] || '').toLowerCase();
+  if (type === 'automix' && point === 'realstart') {
+    return { type: 'memory', index: null, positionMs: pos * 1000, lengthMs: null, color, label: 'Inizio' };
+  }
+  if (type === 'remix') {
+    return { type: 'memory', index: null, positionMs: pos * 1000, lengthMs: null, color, label: p['@_Name'] || 'Remix' };
+  }
+  return null;
+}
+
+/**
+ * Playlist VirtualDJ: NON stanno in database.xml ma in file .vdjfolder nella
+ * cartella "Folders" accanto al database (roadmap §7.6: prima ignorate → 0
+ * playlist importate). I VirtualFolder statici hanno `<song path>`; i
+ * FilterFolder sono query dinamiche non materializzabili (le segnaliamo).
+ */
+function readVdjFolders(foldersDir: string): { playlists: NormPlaylist[]; filters: string[] } {
+  const playlists: NormPlaylist[] = [];
+  const filters: string[] = [];
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseAttributeValue: false });
+  const walk = (dir: string, prefix: string): void => {
+    let entries: import('fs').Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        walk(full, prefix ? `${prefix} / ${e.name}` : e.name);
+      } else if (e.isFile() && /\.vdjfolder$/i.test(e.name)) {
+        const base = e.name.replace(/\.vdjfolder$/i, '');
+        const name = prefix ? `${prefix} / ${base}` : base;
+        let doc: Record<string, unknown>;
+        try {
+          doc = parser.parse(readFileSync(full, 'utf-8'));
+        } catch {
+          continue;
+        }
+        if (doc?.FilterFolder !== undefined && doc?.VirtualFolder === undefined) {
+          filters.push(name);
+          continue;
+        }
+        const vf = (doc?.VirtualFolder ?? doc?.MyLists) as Record<string, unknown> | undefined;
+        if (vf === undefined) continue; // né VirtualFolder statico né FilterFolder
+        const songs = asArray<Record<string, string>>(vf.song as never);
+        const trackSourceIds = songs
+          .map((s) => (s && s['@_path']) || null)
+          .filter((p): p is string => !!p);
+        // Una playlist statica valida va importata anche se VUOTA (come fanno i
+        // reader Traktor/Engine): non perdiamo la struttura dell'utente.
+        playlists.push({ sourceId: `vdjf:${full}`, name, isFolder: false, parentSourceId: null, trackSourceIds });
+      }
+    }
   };
+  walk(foldersDir, '');
+  return { playlists, filters };
 }
 
 export function readVirtualDjXml(dbPath: string): ForeignLibrary {
@@ -93,6 +168,16 @@ export function readVirtualDjXml(dbPath: string): ForeignLibrary {
   }
 
   if (tracks.length === 0) warnings.push('Nessun brano trovato nel database VirtualDJ.');
-  warnings.push('Le playlist di VirtualDJ non sono nel database.xml (file .vdjfolder separati): importati solo brani e cue.');
-  return { source: 'virtualdj', tracks, playlists: [], warnings };
+
+  // Playlist dai .vdjfolder nella cartella "Folders" accanto al database.
+  const { playlists, filters } = readVdjFolders(join(dirname(dbPath), 'Folders'));
+  if (filters.length > 0) {
+    warnings.push(
+      `VirtualDJ: ${filters.length} cartelle-filtro dinamiche non importate (criteri non materializzabili): ${filters.slice(0, 5).join(', ')}${filters.length > 5 ? '…' : ''}.`
+    );
+  }
+  if (playlists.length === 0 && filters.length === 0) {
+    warnings.push('VirtualDJ: nessuna playlist statica (.vdjfolder) trovata accanto al database.');
+  }
+  return { source: 'virtualdj', tracks, playlists, warnings };
 }

@@ -1,5 +1,5 @@
 import { create } from 'xmlbuilder2';
-import { writeFileSync } from 'fs';
+import { readdirSync, realpathSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import type BetterSqlite3 from 'better-sqlite3';
 import {
@@ -42,7 +42,8 @@ export function writeTraktorNml(
       TITLE: t.title ?? '',
       ARTIST: t.artist ?? ''
     });
-    entry.ele('LOCATION', { DIR: dir, FILE: file, VOLUME: volume });
+    // VOLUMEID = VOLUME: Traktor lo usa per identificare il drive (bug B1).
+    entry.ele('LOCATION', { DIR: dir, FILE: file, VOLUME: volume, VOLUMEID: volume });
     entry.ele('ALBUM', { TITLE: t.album ?? '' });
     entry.ele('INFO', {
       GENRE: t.genre ?? '',
@@ -70,8 +71,12 @@ export function writeTraktorNml(
         HOTCUE: '-1'
       });
     }
+    // Pad hot già occupati: un loop su un pad già usato da un hot cue viene
+    // degradato a HOTCUE=-1 (in Traktor un pad tiene un solo elemento).
+    const usedHot = new Set<number>();
     for (const c of getCuesForTrack(db, t.id)) {
       if (c.cue_type === 'hot' && c.cue_index !== null && c.cue_index < 8) {
+        usedHot.add(c.cue_index);
         entry.ele('CUE_V2', {
           NAME: c.label ?? `Cue ${c.cue_index + 1}`,
           TYPE: '0',
@@ -89,12 +94,19 @@ export function writeTraktorNml(
           HOTCUE: '-1'
         });
       } else if (c.cue_type === 'loop' && c.length_ms !== null) {
+        // Loop-su-pad (roadmap §7.7): se il loop è su un pad hot LIBERO, conserva
+        // lo slot (prima HOTCUE era sempre -1 → si perdeva il pad nel round-trip);
+        // se il pad è già occupato da un hot cue, degrada a -1 per non collidere.
+        const hot =
+          c.cue_index !== null && c.cue_index >= 0 && c.cue_index < 8 && !usedHot.has(c.cue_index)
+            ? String(c.cue_index)
+            : '-1';
         entry.ele('CUE_V2', {
           NAME: c.label ?? 'Loop',
           TYPE: '5',
           START: c.position_ms.toFixed(3),
           LEN: c.length_ms.toFixed(3),
-          HOTCUE: '-1'
+          HOTCUE: hot
         });
       }
     }
@@ -130,15 +142,52 @@ export function writeTraktorNml(
   return { tracks: count, playlists: plCount };
 }
 
-/** C:\Music\House\a.mp3 → /:Music/:House/: ; /Users/x/a.mp3 → /:Users/:x/: */
+/** C:\Music\House\a.mp3 → /:Music/:House/: ; /Users/x/a.mp3 → /:Users/:x/:
+ *  Su un drive esterno /Volumes/USB/Music/a.mp3 → /:Music/: (il mount va tolto,
+ *  finisce in VOLUME — bug B3). */
 export function traktorDir(p: string): string {
-  const posix = p.replace(/\\/g, '/');
-  const dir = dirname(posix.replace(/^[A-Za-z]:/, ''));
+  const posix = p
+    .replace(/\\/g, '/')
+    .replace(/^[A-Za-z]:/, '') // drive Windows
+    .replace(/^\/Volumes\/[^/]+/, ''); // mount esterno macOS
+  const dir = dirname(posix);
   const parts = dir.split('/').filter(Boolean);
   return `/:${parts.join('/:')}${parts.length ? '/:' : ''}`;
 }
 
+// Nome del volume di boot (montato a "/"), scansionando /Volumes una volta.
+let _bootVolume: string | null = null;
+function bootVolumeName(): string {
+  if (_bootVolume !== null) return _bootVolume;
+  _bootVolume = '';
+  try {
+    for (const name of readdirSync('/Volumes')) {
+      try {
+        if (realpathSync(`/Volumes/${name}`) === '/') {
+          _bootVolume = name;
+          break;
+        }
+      } catch {
+        /* voce non risolvibile: salta */
+      }
+    }
+  } catch {
+    /* niente /Volumes (non-macOS): boot vuoto */
+  }
+  return _bootVolume;
+}
+
+/**
+ * VOLUME per Traktor (bug B1): Windows → "C:"; drive esterno macOS
+ * "/Volumes/USB/…" → "USB"; percorso di boot macOS → nome del volume di boot
+ * ("Macintosh HD"). Prima restituiva sempre "" su macOS, e Traktor non
+ * ritrovava i file.
+ */
 export function traktorVolume(p: string): string {
-  const m = p.match(/^([A-Za-z]:)/);
-  return m ? m[1] : '';
+  const win = p.match(/^([A-Za-z]:)/);
+  if (win) return win[1];
+  const ext = p.match(/^\/Volumes\/([^/]+)\//);
+  if (ext) return ext[1];
+  if (p.startsWith('/')) return bootVolumeName();
+  return '';
 }

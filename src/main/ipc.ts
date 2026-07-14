@@ -52,6 +52,8 @@ import { writeSetXml } from '@adapters/rekordbox/setXml';
 import type { TrackRow } from '@core/udm';
 import { ThrottledProgress } from './progress';
 import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
+import { rekordboxDefaultPaths } from './rekordboxPaths';
+import { getLastPreflight, runPreflight } from './preflight';
 
 /**
  * Registrazione handler IPC. Regole:
@@ -138,6 +140,20 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
     return { ok: true, enabled: enable };
   });
   ipcMain.handle('sidecar:check', () => checkSidecar());
+
+  // Percorsi di default dell'installazione Rekordbox dell'utente (per pre-puntare
+  // il file picker del master.db e rilevarlo automaticamente sulla sua macchina).
+  ipcMain.handle('rekordbox:defaultPaths', () => rekordboxDefaultPaths());
+
+  // Stato del preflight all'avvio (sidecar eseguibile + chiave pronta). `get`
+  // ritorna l'ultimo esito (null se il controllo è ancora in corso); `rerun` lo
+  // riesegue (es. dopo aver collegato internet) e notifica il renderer.
+  ipcMain.handle('preflight:get', () => getLastPreflight());
+  ipcMain.handle('preflight:rerun', async () => {
+    const state = await runPreflight(db, udmPath);
+    wc()?.send('preflight:update', state);
+    return state;
+  });
 
   // Fallback chiave Rekordbox (§4.3) in-app: nessun terminale, nessun sito.
   // Registrato qui ma usa runSidecarJob (definito sotto) solo a runtime.
@@ -288,6 +304,18 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
       });
     }
   );
+
+  // ---- import Serato (sidecar Python; database V2 + crate + cue GEOB) ----
+  // Sperimentale, sola lettura. Riceve la cartella "_Serato_" e vi legge dentro.
+  ipcMain.handle('library:importSerato', async (_e, seratoDir: string) => {
+    const check = checkSidecar();
+    if (!check.available) {
+      return { ok: false, message: 'Il modulo di lettura non è disponibile su questo computer.' };
+    }
+    const r = await runSidecarJob('read-serato', 'read-serato', ['--serato-dir', seratoDir]);
+    logOperation(db, 'import.serato', seratoDir, r.ok ? 'ok' : 'error', r.ok ? JSON.stringify(r.data) : r.message);
+    return r.ok ? { ok: true, ...r.data } : { ok: false, message: r.message };
+  });
 
   ipcMain.handle('job:cancel', () => {
     currentCancel?.();
@@ -949,12 +977,17 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
   // se manca del tutto si apre un dialog senza parent (comunque valido).
   const dialogParent = (e: Electron.IpcMainInvokeEvent): BrowserWindow | undefined =>
     BrowserWindow.fromWebContents(e.sender) ?? win();
-  ipcMain.handle('dialog:openFile', async (e, filters?: { name: string; extensions: string[] }[]) => {
-    const parent = dialogParent(e);
-    const opts = { properties: ['openFile'] as ('openFile')[], filters };
-    const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
-    return r.canceled ? null : r.filePaths[0];
-  });
+  ipcMain.handle(
+    'dialog:openFile',
+    async (e, filters?: { name: string; extensions: string[] }[], defaultPath?: string) => {
+      const parent = dialogParent(e);
+      // defaultPath pre-punta il dialog: se è un file esistente viene pre-selezionato,
+      // se è una cartella la apre direttamente (es. la cartella Rekordbox dell'utente).
+      const opts = { properties: ['openFile'] as ('openFile')[], filters, defaultPath };
+      const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
+      return r.canceled ? null : r.filePaths[0];
+    }
+  );
   ipcMain.handle('dialog:openDirectory', async (e) => {
     const parent = dialogParent(e);
     const opts = { properties: ['openDirectory'] as ('openDirectory')[] };

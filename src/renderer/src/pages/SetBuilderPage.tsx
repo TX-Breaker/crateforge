@@ -103,13 +103,16 @@ export function SetBuilderPage() {
 
   const doMasterdbWrite = async () => {
     if (!built) return;
-    const masterDbPath = await window.crateforge.dialog.openFile([
-      { name: 'Rekordbox master.db', extensions: ['db'] }
-    ]);
+    const rb = await window.crateforge.rekordbox.defaultPaths();
+    const masterDbPath = await window.crateforge.dialog.openFile(
+      [{ name: 'Rekordbox master.db', extensions: ['db'] }],
+      rb.masterDbExists ? rb.masterDb : rb.dir
+    );
     if (!masterDbPath) return;
-    const optionsPath = await window.crateforge.dialog.openFile([
-      { name: 'options.json', extensions: ['json'] }
-    ]);
+    const optionsPath = await window.crateforge.dialog.openFile(
+      [{ name: 'options.json', extensions: ['json'] }],
+      rb.optionsJsonExists ? rb.optionsJson : rb.dir
+    );
     const name = tp('plName');
     setBusy(true);
     setError(null);

@@ -14,7 +14,7 @@ import type BetterSqlite3 from 'better-sqlite3';
  *    I due percorsi non girano mai in concorrenza: Node serializza i job.
  *  - settings / jobs / oplog → SOLO Node.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -227,6 +227,19 @@ const MIGRATIONS: Record<number, string> = {
       path TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_history_session ON play_history(session_id);
+  `,
+  // Metadati di performance trasversali (roadmap §7.5): finora persi in OGNI
+  // rotta perché assenti dal modello, non dai formati. gain_db = guadagno/replay-
+  // gain in dB; rating 0-100 (normalizzato dalle stelle 0-5 dove serve);
+  // track_color = colore della traccia in #RRGGBB; beatgrid_bpm/anchor = primo
+  // downbeat per ricostruire una griglia a BPM costante (la griglia a fase
+  // variabile completa resta nei file ANLZ/GRID, vedi roadmap §7.10).
+  6: `
+    ALTER TABLE tracks ADD COLUMN gain_db REAL;
+    ALTER TABLE tracks ADD COLUMN rating INTEGER;
+    ALTER TABLE tracks ADD COLUMN track_color TEXT;
+    ALTER TABLE tracks ADD COLUMN beatgrid_bpm REAL;
+    ALTER TABLE tracks ADD COLUMN beatgrid_anchor_ms REAL;
   `
 };
 

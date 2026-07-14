@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, BookOpen, Download } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, BookOpen, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +45,18 @@ const FORMATS: { id: Format; title: string; descKey: string; ext: string; defaul
   }
 ];
 
+// Sorgenti importabili per la conversione diretta X→Y. `udm` è il valore della
+// colonna tracks.source dopo l'import, usato per esportare SOLO quella libreria.
+type SourceId = 'rekordbox-db' | 'rekordbox-xml' | 'traktor' | 'virtualdj' | 'engine' | 'serato';
+const SOURCES: { id: SourceId; label: string; ext: string; udm: string }[] = [
+  { id: 'rekordbox-db', label: 'Rekordbox (master.db)', ext: 'db', udm: 'masterdb' },
+  { id: 'rekordbox-xml', label: 'Rekordbox (collection XML)', ext: 'xml', udm: 'xml' },
+  { id: 'traktor', label: 'Traktor (.nml)', ext: 'nml', udm: 'traktor' },
+  { id: 'virtualdj', label: 'VirtualDJ (database.xml)', ext: 'xml', udm: 'virtualdj' },
+  { id: 'engine', label: 'Engine DJ (m.db)', ext: 'db', udm: 'engine' },
+  { id: 'serato', label: 'Serato (cartella _Serato_) — sperimentale', ext: '', udm: 'serato' }
+];
+
 type Cap = 'full' | 'partial' | 'none';
 type TpFn = (k: string, p?: Record<string, string | number>) => string;
 
@@ -52,8 +64,8 @@ const MATRIX: { app: string; imp: Cap; impKey: string; exp: Cap; expKey: string 
   { app: 'Rekordbox', imp: 'full', impKey: 'rbImport', exp: 'full', expKey: 'rbExport' },
   { app: 'Traktor', imp: 'full', impKey: 'trImport', exp: 'full', expKey: 'trExport' },
   { app: 'VirtualDJ', imp: 'partial', impKey: 'vdjImport', exp: 'full', expKey: 'vdjExport' },
-  { app: 'Engine DJ', imp: 'partial', impKey: 'enImport', exp: 'none', expKey: 'enExport' },
-  { app: 'Serato', imp: 'none', impKey: 'srImport', exp: 'none', expKey: 'srExport' }
+  { app: 'Engine DJ', imp: 'full', impKey: 'enImport', exp: 'none', expKey: 'enExport' },
+  { app: 'Serato', imp: 'partial', impKey: 'srImport', exp: 'none', expKey: 'srExport' }
 ];
 
 const CAP_ICON: Record<Cap, string> = { full: '●', partial: '◐', none: '○' };
@@ -125,10 +137,89 @@ export function ConverterPage() {
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  // Conversione diretta X→Y.
+  const [srcSel, setSrcSel] = useState<SourceId>('rekordbox-db');
+  const [dstSel, setDstSel] = useState<Format>('traktor');
+  // Se valorizzato, l'export filtra su questa sorgente (converte solo la libreria
+  // X appena importata, non tutto l'hub UDM). Null = export dell'intera libreria.
+  const [convertSource, setConvertSource] = useState<string | null>(null);
 
   const startExport = (fmt: Format) => {
+    setConvertSource(null); // le card singole esportano l'intera libreria UDM
     setAcknowledged(false);
     setPending(fmt);
+  };
+
+  // Import della sorgente scelta; ritorna true se la libreria è entrata nell'UDM.
+  const importSource = async (src: SourceId): Promise<boolean> => {
+    setError(null);
+    setOutcome(null);
+    // Serato: si sceglie la CARTELLA "_Serato_" (i cue stanno nei tag dei file).
+    if (src === 'serato') {
+      const dir = await window.crateforge.dialog.openDirectory();
+      if (!dir) return false;
+      setBusy(true);
+      try {
+        const r = await window.crateforge.library.importSerato(dir);
+        if (!r.ok) {
+          setError(r.message ?? tp('convErr'));
+          return false;
+        }
+        return true;
+      } catch (err) {
+        setError(String(err));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    }
+    const def = SOURCES.find((s) => s.id === src)!;
+    let path: string | null;
+    if (src === 'rekordbox-db') {
+      const rb = await window.crateforge.rekordbox.defaultPaths();
+      path = await window.crateforge.dialog.openFile(
+        [{ name: def.label, extensions: [def.ext] }],
+        rb.masterDbExists ? rb.masterDb : rb.dir
+      );
+    } else {
+      path = await window.crateforge.dialog.openFile([{ name: def.label, extensions: [def.ext] }]);
+    }
+    if (!path) return false;
+    setBusy(true);
+    try {
+      if (src === 'rekordbox-db') {
+        const r = await window.crateforge.library.ingestMasterdb(path);
+        if (!r.ok) {
+          setError(r.message ?? tp('convErr'));
+          return false;
+        }
+      } else if (src === 'rekordbox-xml') {
+        await window.crateforge.library.ingestXml(path);
+      } else {
+        const r = await window.crateforge.library.importForeign(src, path);
+        if (!r.ok) {
+          setError(r.message ?? tp('convErr'));
+          return false;
+        }
+        if (r.warnings?.length) setOutcome(r.warnings.join(' '));
+      }
+      return true;
+    } catch (err) {
+      setError(String(err));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // X→Y: importa la sorgente, poi apre il dialog dei limiti del formato di
+  // destinazione; l'export effettivo (doExport) filtra sulla sorgente importata.
+  const startConvert = async () => {
+    const ok = await importSource(srcSel);
+    if (!ok) return;
+    setConvertSource(SOURCES.find((s) => s.id === srcSel)!.udm);
+    setAcknowledged(false);
+    setPending(dstSel);
   };
 
   const doExport = async () => {
@@ -139,16 +230,18 @@ export function ConverterPage() {
       { name: fmt.title, extensions: [fmt.ext] }
     ]);
     if (!outPath) return;
+    // Conversione X→Y: esporta SOLO la libreria appena importata; altrimenti tutto.
+    const sel = convertSource ? { source: convertSource } : undefined;
     setBusy(true);
     setError(null);
     setOutcome(null);
     try {
       const r =
         fmt.id === 'rekordbox'
-          ? await window.crateforge.exporter.rekordboxXml(outPath)
+          ? await window.crateforge.exporter.rekordboxXml(outPath, sel)
           : fmt.id === 'traktor'
-            ? await window.crateforge.exporter.traktorNml(outPath)
-            : await window.crateforge.exporter.virtualdjXml(outPath);
+            ? await window.crateforge.exporter.traktorNml(outPath, sel)
+            : await window.crateforge.exporter.virtualdjXml(outPath, sel);
       setOutcome(
         tp('outDone', { fmt: fmt.title, n: r.tracks.toLocaleString(locale), path: outPath }) +
           (fmt.id === 'rekordbox' ? tp('outRbTail') : '')
@@ -157,6 +250,7 @@ export function ConverterPage() {
       setError(String(err));
     } finally {
       setBusy(false);
+      setConvertSource(null);
     }
   };
 
@@ -168,6 +262,53 @@ export function ConverterPage() {
       </div>
 
       <RekordboxDiff page="converter" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ArrowRightLeft className="h-4 w-4" /> {tp('directTitle')}
+          </CardTitle>
+          <CardDescription>{tp('directDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">{tp('srcLabel')}</label>
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={srcSel}
+                onChange={(e) => setSrcSel(e.target.value as SourceId)}
+                disabled={busy}
+              >
+                {SOURCES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="pb-2 text-muted-foreground">→</span>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">{tp('dstLabel')}</label>
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={dstSel}
+                onChange={(e) => setDstSel(e.target.value as Format)}
+                disabled={busy}
+              >
+                {FORMATS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button onClick={startConvert} disabled={busy}>
+              <ArrowRightLeft /> {tp('convertBtn')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <ConversionMatrix tp={tp} />
 

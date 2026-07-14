@@ -35,6 +35,13 @@ export interface NormTrack {
   path: string | null;
   filesize: number | null;
   cues: NormCue[];
+  // Metadati di performance (roadmap §7.5). Opzionali: gli adapter che non li
+  // hanno lasciano undefined → NULL nell'UDM (nessuna regressione).
+  gainDb?: number | null;
+  rating?: number | null;
+  trackColor?: string | null;
+  beatgridBpm?: number | null;
+  beatgridAnchorMs?: number | null;
 }
 
 export interface NormPlaylist {
@@ -89,10 +96,12 @@ export function importForeignLibrary(
   const insertTrack = db.prepare(`
     INSERT INTO tracks (source, source_id, title, artist, album, genre, year, bpm,
                         musical_key, camelot, duration_s, path, filesize, version_label,
-                        has_tag_issues, needs_review, review_reason)
+                        has_tag_issues, needs_review, review_reason,
+                        gain_db, rating, track_color, beatgrid_bpm, beatgrid_anchor_ms)
     VALUES (@source, @source_id, @title, @artist, @album, @genre, @year, @bpm,
             @musical_key, @camelot, @duration_s, @path, @filesize, @version_label,
-            @has_tag_issues, @needs_review, @review_reason)
+            @has_tag_issues, @needs_review, @review_reason,
+            @gain_db, @rating, @track_color, @beatgrid_bpm, @beatgrid_anchor_ms)
     ON CONFLICT(source, source_id) DO UPDATE SET
       title = excluded.title, artist = excluded.artist, album = excluded.album,
       genre = excluded.genre, year = excluded.year, bpm = excluded.bpm,
@@ -100,7 +109,10 @@ export function importForeignLibrary(
       duration_s = excluded.duration_s, path = excluded.path,
       filesize = excluded.filesize, version_label = excluded.version_label,
       has_tag_issues = excluded.has_tag_issues, needs_review = excluded.needs_review,
-      review_reason = excluded.review_reason
+      review_reason = excluded.review_reason,
+      gain_db = excluded.gain_db, rating = excluded.rating,
+      track_color = excluded.track_color, beatgrid_bpm = excluded.beatgrid_bpm,
+      beatgrid_anchor_ms = excluded.beatgrid_anchor_ms
   `);
   const getId = db.prepare(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`);
   const deleteCues = db.prepare(`DELETE FROM cues WHERE track_id = ?`);
@@ -139,7 +151,12 @@ export function importForeignLibrary(
             extractVersionLabel(t.title ?? '') || extractVersionLabel(t.path ?? ''),
           has_tag_issues: tagIssue ? 1 : 0,
           needs_review: badEncoding ? 1 : 0,
-          review_reason: badEncoding ? 'Tag con caratteri sospetti o corrotti' : null
+          review_reason: badEncoding ? 'Tag con caratteri sospetti o corrotti' : null,
+          gain_db: t.gainDb ?? null,
+          rating: t.rating ?? null,
+          track_color: t.trackColor ?? null,
+          beatgrid_bpm: t.beatgridBpm ?? null,
+          beatgrid_anchor_ms: t.beatgridAnchorMs ?? null
         });
         const row = getId.get(lib.source, t.sourceId) as { id: number } | undefined;
         if (!row) {
