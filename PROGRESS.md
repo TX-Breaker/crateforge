@@ -317,6 +317,27 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
       di riferimento + encoding blob PerformanceData)
 - [x] Rinviata: cattura live SIAE reale (Rekordbox aperto/controller PRO DJ LINK)
 
+## MAC-READINESS (richiesta utente 14/07/2026) — PRONTO, SERVE PUSH O UN MAC
+- [x] Audit multi-agente (runtime darwin, CI, packaging, ricerca web verificata):
+      runtime già portabile (BINARY_NAME senza .exe, kill process group unix,
+      pathToLocation POSIX, NFC, niente path hardcoded)
+- [x] build_sidecar.sh ora builda dallo .spec → fix numpy portato anche su mac
+- [x] build.yml riscritto: trigger anche su master; path alla root repo (il
+      toplevel git È crateforge — prima tutti i path CI erano rotti); runner
+      macos-13 RITIRATO da GitHub (4/12/2025) → macos-15-intel; Python 3.13
+      (= venv locale validato); permissions contents:read; timeout sul job
+      check; if-no-files-found: error; smoke `ping` del sidecar su mac+win
+- [x] numpy pinnato in requirements.txt (2.5.0, = locale)
+- [x] README: Gatekeeper aggiornato — su macOS 15 Sequoia "tasto destro→Apri"
+      non funziona più per app non notarizzate → "Apri comunque" in Privacy e
+      Sicurezza, o xattr -dr com.apple.quarantine
+- [x] docs/BUILD-MACOS.md: guida completa (perché non si builda da Windows,
+      strada A = GitHub Actions, strada B = Mac reale, avvio non firmato)
+- [ ] Esecuzione build mac: richiede push su GitHub (repo senza remote) o un
+      Mac fisico — non possibile da questo PC Windows
+- [ ] Opzionale: icon.png 1024×1024 per icona nitida su Retina (oggi 512×512,
+      valida ma morbida); firma+notarizzazione Apple per rimuovere Gatekeeper
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)

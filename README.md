@@ -118,7 +118,10 @@ In alternativa puoi usare un vero master.db di test impostando `CRATEFORGE_TEST_
 
 I build locali e di CI **non sono firmati**:
 
-- **macOS (Gatekeeper)**: "app non verificata" — serve un certificato Apple Developer + notarizzazione per eliminarlo. Workaround utente: tasto destro → Apri.
+- **macOS (Gatekeeper)**: "app non verificata" — serve un certificato Apple Developer + notarizzazione per eliminarlo. Come aprirla comunque:
+  - **macOS 15 (Sequoia) e successivi**: il vecchio bypass "tasto destro → Apri" NON funziona più per le app non notarizzate. Procedi così: prova ad aprire l'app (il dialogo la blocca), poi vai in **Impostazioni di Sistema → Privacy e Sicurezza**, scorri alla sezione Sicurezza e clicca **"Apri comunque"** (chiede la password admin, una sola volta per app).
+  - **macOS 13/14**: tasto destro sull'app → **Apri** → Apri.
+  - In alternativa, da Terminale (rimuove la quarantena): `xattr -dr com.apple.quarantine /Applications/CrateForge.app`
 - **Windows (SmartScreen)**: "app non riconosciuta" — serve un certificato di code-signing. Workaround: Ulteriori informazioni → Esegui comunque.
 
 ## Falsi positivi antivirus (Windows)

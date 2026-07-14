@@ -19,10 +19,11 @@ pip install --upgrade pip
 # perché non richiedono compilatori.
 pip install --prefer-binary -r requirements.txt
 
-pyinstaller --noconfirm --clean --onedir \
-  --name crateforge-sidecar \
-  --collect-all pyrekordbox \
-  sidecar.py
+# Build dallo .spec (raccoglie pyrekordbox + numpy + sqlcipher3 + sqlalchemy:
+# senza numpy esplicito il binario frozen fallirebbe con
+# "No module named 'numpy._core._exceptions'" e ingest-masterdb/read-history
+# morirebbero all'import — bug trovato sul pacchetto Windows, stesso rischio qui).
+pyinstaller --noconfirm --clean crateforge-sidecar.spec
 
 # fpcalc (Chromaprint) incluso nel pacchetto: l'utente non deve installarlo.
 FPCALC_VERSION=1.5.1
