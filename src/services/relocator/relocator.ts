@@ -1,8 +1,19 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'fs';
-import { basename } from 'path';
 import { AUDIO_EXTENSIONS, canonicalizeName, walkFiles } from '../fsutil';
 import type { TrackRow } from '@core/udm';
+
+/**
+ * basename indipendente dalla piattaforma: splitta su ENTRAMBI i separatori
+ * (`/` e `\`). `path.basename` di POSIX non tratta `\` come separatore, quindi
+ * su macOS/Linux un path Windows-style salvato nel DB (es. libreria esportata
+ * da un altro PC) non verrebbe estratto correttamente. Il relocator è proprio
+ * il caso "libreria spostata tra macchine": deve reggere path di ogni stile.
+ */
+function baseNameAnySep(p: string): string {
+  const parts = p.split(/[\\/]/);
+  return parts[parts.length - 1] || p;
+}
 
 /**
  * Relocator Esterno base (§6 Fase 1.5): trova i path rotti, matcha per nome
@@ -54,7 +65,7 @@ export async function matchByFilename(
   let scanned = 0;
   for await (const file of walkFiles(newRoot, AUDIO_EXTENSIONS)) {
     scanned++;
-    const name = canonicalizeName(basename(file.path));
+    const name = canonicalizeName(baseNameAnySep(file.path));
     const list = byName.get(name);
     if (list) list.push(file.path);
     else byName.set(name, [file.path]);
@@ -62,7 +73,7 @@ export async function matchByFilename(
   }
 
   return broken.map(({ track, oldPath }) => {
-    const candidates = byName.get(canonicalizeName(basename(oldPath))) ?? [];
+    const candidates = byName.get(canonicalizeName(baseNameAnySep(oldPath))) ?? [];
     return {
       track,
       oldPath,

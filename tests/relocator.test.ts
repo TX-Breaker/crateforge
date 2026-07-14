@@ -69,6 +69,19 @@ describe('matchByFilename', () => {
     const m = matches.find((m) => m.track.title === 'M')!;
     expect(m.newPath).toBeNull(); // nessun match
   });
+
+  it('estrae il nome file da path Windows-style anche su POSIX (basename cross-piattaforma)', async () => {
+    // Regressione: path.basename di POSIX non splitta i backslash, quindi
+    // 'C:\\x\\brano.mp3' su macOS/Linux non matcherebbe. Il relocator è proprio
+    // il caso "libreria spostata tra macchine": deve reggere path di ogni stile.
+    const newRoot = join(tmp, 'nuova2');
+    mkdirSync(newRoot, { recursive: true });
+    writeFileSync(join(newRoot, 'canzone.mp3'), 'x');
+
+    const broken = [{ track: { title: 'W' } as TrackRow, oldPath: 'C:\\Music\\Old\\canzone.mp3' }];
+    const [match] = await matchByFilename(broken, newRoot);
+    expect(match.newPath).toBe(join(newRoot, 'canzone.mp3'));
+  });
 });
 
 describe('writeRelocationXml', () => {

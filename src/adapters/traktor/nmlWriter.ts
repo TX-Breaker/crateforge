@@ -1,6 +1,6 @@
 import { create } from 'xmlbuilder2';
 import { writeFileSync } from 'fs';
-import { basename, dirname } from 'path';
+import { dirname } from 'path';
 import type BetterSqlite3 from 'better-sqlite3';
 import {
   ExportSelection,
@@ -31,7 +31,10 @@ export function writeTraktorNml(
   for (const t of iterateTracks(db, sel)) {
     if (!t.path) continue;
     const dir = traktorDir(t.path);
-    const file = basename(t.path);
+    // Come traktorDir: normalizzo i separatori così un path Windows-style dal
+    // DB (`\`) dà il nome file corretto anche esportando da macOS/Linux, dove
+    // path.basename non splitta i backslash.
+    const file = t.path.replace(/\\/g, '/').split('/').pop() || '';
     const volume = traktorVolume(t.path);
     keyByTrackId.set(t.id, `${volume}${dir}${file}`);
 
