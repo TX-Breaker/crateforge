@@ -54,7 +54,7 @@ const SOURCES: { id: SourceId; label: string; ext: string; udm: string }[] = [
   { id: 'traktor', label: 'Traktor (.nml)', ext: 'nml', udm: 'traktor' },
   { id: 'virtualdj', label: 'VirtualDJ (database.xml)', ext: 'xml', udm: 'virtualdj' },
   { id: 'engine', label: 'Engine DJ (m.db)', ext: 'db', udm: 'engine' },
-  { id: 'serato', label: 'Serato (cartella _Serato_) — sperimentale', ext: '', udm: 'serato' }
+  { id: 'serato', label: 'Serato (cartella _Serato_ o cartella musica)', ext: '', udm: 'serato' }
 ];
 
 type Cap = 'full' | 'partial' | 'none';
@@ -65,7 +65,7 @@ const MATRIX: { app: string; imp: Cap; impKey: string; exp: Cap; expKey: string 
   { app: 'Traktor', imp: 'full', impKey: 'trImport', exp: 'full', expKey: 'trExport' },
   { app: 'VirtualDJ', imp: 'partial', impKey: 'vdjImport', exp: 'full', expKey: 'vdjExport' },
   { app: 'Engine DJ', imp: 'full', impKey: 'enImport', exp: 'none', expKey: 'enExport' },
-  { app: 'Serato', imp: 'partial', impKey: 'srImport', exp: 'none', expKey: 'srExport' }
+  { app: 'Serato', imp: 'full', impKey: 'srImport', exp: 'none', expKey: 'srExport' }
 ];
 
 const CAP_ICON: Record<Cap, string> = { full: '●', partial: '◐', none: '○' };

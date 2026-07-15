@@ -1115,8 +1115,13 @@ def parse_serato_markers2(geob_data: bytes):
     import struct as _s
 
     try:
-        b64 = geob_data[2:].replace(b"\n", b"").replace(b"\x00", b"")
-        body = base64.b64decode(b64 + b"=" * (-len(b64) % 4))
+        # 2 byte versione + base64 (newline ogni 72 char) + null di padding.
+        # La base64 va presa FINO al primo null e TRONCATA all'ultimo gruppo
+        # completo di 4: Serato lascia un gruppo parziale finale (verificato su
+        # file reali) che romperebbe il decode se lo si tenta di completare.
+        b64 = geob_data[2:].replace(b"\n", b"").split(b"\x00")[0]
+        b64 = b64[: len(b64) - (len(b64) % 4)]
+        body = base64.b64decode(b64)
     except Exception:
         return []
     cues = []
@@ -1160,18 +1165,85 @@ def _serato_volume_root(serato_dir: str) -> str:
     return m.group(1) if m else ""
 
 
+_SERATO_AUDIO_EXT = (".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a")
+
+
+def _serato_has_markers(tags) -> bool:
+    if not tags:
+        return False
+    for gk in tags.keys():
+        if str(gk).startswith("GEOB") and getattr(tags[gk], "desc", "") == "Serato Markers2":
+            return True
+    return False
+
+
+def _serato_import_one(udm, MutagenFile, abs_path, source_id, meta) -> int:
+    """Inserisce/aggiorna un brano Serato e ne legge i cue GEOB. Ritorna il
+    numero di cue importati. `meta['_tags']` (se presente) evita di riaprire il
+    file quando i tag sono già stati letti dallo scan."""
+    title, artist, key_name = meta.get("title"), meta.get("artist"), meta.get("key")
+    udm.execute(
+        """INSERT INTO tracks (source, source_id, title, artist, album, genre,
+               bpm, musical_key, camelot, path, has_tag_issues, needs_review)
+           VALUES ('serato', :sid, :title, :artist, :album, :genre, :bpm, :key,
+               :camelot, :path, :issue, 0)
+           ON CONFLICT(source, source_id) DO UPDATE SET
+               title=excluded.title, artist=excluded.artist, album=excluded.album,
+               genre=excluded.genre, bpm=excluded.bpm, musical_key=excluded.musical_key,
+               camelot=excluded.camelot, path=excluded.path""",
+        {
+            "sid": source_id, "title": title, "artist": artist,
+            "album": meta.get("album"), "genre": meta.get("genre"),
+            "bpm": meta.get("bpm"), "key": key_name, "camelot": to_camelot(key_name),
+            "path": abs_path, "issue": 1 if (not title or not artist) else 0,
+        },
+    )
+    trow = udm.execute(
+        "SELECT id FROM tracks WHERE source='serato' AND source_id=?", (source_id,)
+    ).fetchone()
+    if not trow:
+        return 0
+    tid = trow[0]
+    udm.execute("DELETE FROM cues WHERE track_id=?", (tid,))
+    n = 0
+    tags = meta.get("_tags")
+    if tags is None:
+        try:
+            tags = getattr(MutagenFile(abs_path), "tags", None)
+        except Exception:
+            tags = None
+    for gk in list(tags.keys()) if tags else []:
+        if not str(gk).startswith("GEOB"):
+            continue
+        fr = tags[gk]
+        if getattr(fr, "desc", "") == "Serato Markers2":
+            for c in parse_serato_markers2(bytes(fr.data)):
+                udm.execute(
+                    "INSERT INTO cues (track_id, cue_type, cue_index, position_ms,"
+                    " length_ms, color, label) VALUES (?,?,?,?,?,?,?)",
+                    (tid, c[0], c[1], c[2], c[3], c[4], c[5]),
+                )
+                n += 1
+    return n
+
+
 def cmd_read_serato(args: argparse.Namespace) -> None:
     try:
         from mutagen import File as MutagenFile
     except ImportError:
         fail("mutagen non installato nel sidecar: impossibile leggere i cue Serato.")
         return
-    serato_dir = args.serato_dir
-    db_v2 = os.path.join(serato_dir, "database V2")
-    if not os.path.exists(db_v2):
-        fail(f"'database V2' non trovato in {serato_dir}. Non sembra una cartella _Serato_.")
-        return
-    vol = _serato_volume_root(serato_dir)
+    root = args.serato_dir
+    # Il percorso può essere una cartella _Serato_ (con 'database V2') OPPURE una
+    # cartella musica: i cue Serato stanno nei tag GEOB dei file, quindi oltre al
+    # database scansioniamo l'albero per i file taggati non ancora importati (i
+    # brani cue-ati non sempre sono nel database corrente).
+    serato_dir = None
+    if os.path.exists(os.path.join(root, "database V2")):
+        serato_dir = root
+    elif os.path.exists(os.path.join(root, "_Serato_", "database V2")):
+        serato_dir = os.path.join(root, "_Serato_")
+
     udm = open_udm(args.udm_path)
     run_id = udm.execute(
         "INSERT INTO ingest_runs (source, started_at, status) VALUES ('serato', ?, 'running')",
@@ -1181,83 +1253,92 @@ def cmd_read_serato(args: argparse.Namespace) -> None:
     progress = ThrottledProgress("read-serato")
     tracks = 0
     cue_count = 0
+    imported: set[str] = set()
     try:
-        with open(db_v2, "rb") as f:
-            raw = f.read()
-        otrks = [p for t, p in _serato_fields(raw) if t == "otrk"]
-        total = len(otrks)
-        for k, payload in enumerate(otrks):
-            fields = {t: p for t, p in _serato_fields(payload)}
-            rel = _serato_text(fields.get("pfil", b"")) if fields.get("pfil") else None
-            if not rel:
-                continue
-            abs_path = (vol + "/" + rel) if not rel.startswith("/") else rel
-            title = _serato_text(fields.get("tsng", b""))
-            artist = _serato_text(fields.get("tart", b""))
-            album = _serato_text(fields.get("talb", b""))
-            genre = _serato_text(fields.get("tgen", b""))
-            key_name = _serato_text(fields.get("tkey", b""))
-            bpm_txt = _serato_text(fields.get("tbpm", b""))
-            bpm = None
-            try:
-                bpm = float(bpm_txt) if bpm_txt else None
-            except ValueError:
-                bpm = None
-            udm.execute(
-                """INSERT INTO tracks (source, source_id, title, artist, album, genre,
-                       bpm, musical_key, camelot, path, has_tag_issues, needs_review)
-                   VALUES ('serato', :sid, :title, :artist, :album, :genre, :bpm, :key,
-                       :camelot, :path, :issue, 0)
-                   ON CONFLICT(source, source_id) DO UPDATE SET
-                       title=excluded.title, artist=excluded.artist, album=excluded.album,
-                       genre=excluded.genre, bpm=excluded.bpm, musical_key=excluded.musical_key,
-                       camelot=excluded.camelot, path=excluded.path""",
-                {
-                    "sid": rel, "title": title, "artist": artist, "album": album,
-                    "genre": genre, "bpm": bpm, "key": key_name,
-                    "camelot": to_camelot(key_name), "path": abs_path,
-                    "issue": 1 if (not title or not artist) else 0,
-                },
-            )
-            trow = udm.execute(
-                "SELECT id FROM tracks WHERE source='serato' AND source_id=?", (rel,)
-            ).fetchone()
-            if trow:
-                tid = trow[0]
-                udm.execute("DELETE FROM cues WHERE track_id=?", (tid,))
+        # 1) libreria dal database V2 (+ crate), se presente.
+        if serato_dir:
+            vol = _serato_volume_root(serato_dir)
+            with open(os.path.join(serato_dir, "database V2"), "rb") as f:
+                raw = f.read()
+            otrks = [p for t, p in _serato_fields(raw) if t == "otrk"]
+            for k, payload in enumerate(otrks):
+                fld = {t: p for t, p in _serato_fields(payload)}
+                rel = _serato_text(fld.get("pfil", b"")) if fld.get("pfil") else None
+                if not rel:
+                    continue
+                abs_path = (vol + "/" + rel) if not rel.startswith("/") else rel
+                bpm_txt = _serato_text(fld.get("tbpm", b""))
                 try:
-                    # mutagen.File: per MP3/AIFF/WAV .tags è un'istanza ID3 con i
-                    # frame GEOB (ID3() diretto fallisce su AIFF/WAV). FLAC/MP4
-                    # usano altri contenitori: cue non letti (limite noto).
-                    mf = MutagenFile(abs_path)
-                    tags = getattr(mf, "tags", None)
-                    for gk in list(tags.keys()) if tags else []:
-                        if not str(gk).startswith("GEOB"):
-                            continue
-                        fr = tags[gk]
-                        if getattr(fr, "desc", "") == "Serato Markers2":
-                            for c in parse_serato_markers2(bytes(fr.data)):
-                                udm.execute(
-                                    "INSERT INTO cues (track_id, cue_type, cue_index,"
-                                    " position_ms, length_ms, color, label) VALUES (?,?,?,?,?,?,?)",
-                                    (tid, c[0], c[1], c[2], c[3], c[4], c[5]),
-                                )
-                                cue_count += 1
-                except Exception:
-                    pass  # file mancante o senza tag: brano importato senza cue
-            tracks += 1
-            if tracks % 200 == 0:
-                udm.commit()
-            progress.update(k + 1, total)
+                    bpm = float(bpm_txt) if bpm_txt else None
+                except ValueError:
+                    bpm = None
+                cue_count += _serato_import_one(
+                    udm, MutagenFile, abs_path, rel,
+                    {
+                        "title": _serato_text(fld.get("tsng", b"")),
+                        "artist": _serato_text(fld.get("tart", b"")),
+                        "album": _serato_text(fld.get("talb", b"")),
+                        "genre": _serato_text(fld.get("tgen", b"")),
+                        "bpm": bpm, "key": _serato_text(fld.get("tkey", b"")),
+                    },
+                )
+                imported.add(abs_path)
+                tracks += 1
+                if tracks % 200 == 0:
+                    udm.commit()
+                progress.update(k + 1, len(otrks))
+            _read_serato_crates(serato_dir, udm)
+            udm.commit()
 
-        _read_serato_crates(serato_dir, udm)
+        # 2) scan della cartella per i file con "Serato Markers2" non già letti.
+        def _txt(tags, key):
+            try:
+                return str(tags[key].text[0]) if key in tags else None
+            except Exception:
+                return None
+
+        for dp, _, fs in os.walk(root):
+            if "_Serato_" in dp or "/.Trash" in dp:
+                continue
+            for f in fs:
+                if not f.lower().endswith(_SERATO_AUDIO_EXT):
+                    continue
+                ap = os.path.join(dp, f)
+                if ap in imported:
+                    continue
+                try:
+                    tags = getattr(MutagenFile(ap), "tags", None)
+                except Exception:
+                    continue
+                if not _serato_has_markers(tags):
+                    continue
+                bpm = None
+                try:
+                    b = _txt(tags, "TBPM")
+                    bpm = float(b) if b else None
+                except Exception:
+                    bpm = None
+                cue_count += _serato_import_one(
+                    udm, MutagenFile, ap, ap,
+                    {
+                        "title": _txt(tags, "TIT2"), "artist": _txt(tags, "TPE1"),
+                        "album": _txt(tags, "TALB"), "genre": _txt(tags, "TCON"),
+                        "bpm": bpm, "key": _txt(tags, "TKEY"), "_tags": tags,
+                    },
+                )
+                imported.add(ap)
+                tracks += 1
+                if tracks % 100 == 0:
+                    udm.commit()
+                    progress.update(tracks, tracks + 1)
+
         udm.commit()
         udm.execute(
             "UPDATE ingest_runs SET finished_at=?, status='ok', track_count=? WHERE id=?",
             (_now_local(), tracks, run_id),
         )
         udm.commit()
-        progress.finish(total, total)
+        progress.finish(tracks, tracks)
         emit({"type": "done", "data": {"tracks": tracks, "cues": cue_count}})
     except Exception as exc:
         udm.rollback()

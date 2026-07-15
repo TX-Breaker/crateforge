@@ -17,10 +17,10 @@ Legenda: ✅ fatto e validato su dati reali · 🧪 implementato, validato su da
 | 5 | **Estensione UDM: gain, rating, track_color, beatgrid** | ✅ | `core/schema.ts` (v6), `core/foreignImport.ts`, `core/udm.ts` | RB: rating+track_color; Engine: rating |
 | 6 | **VirtualDJ: POI automix/remix + parser `.vdjfolder`** | ✅ | `adapters/virtualdj/vdjReader.ts` | automix realStart/remix→memory; VirtualFolder→playlist; FilterFolder segnalati |
 | 7 | **Traktor: loop-su-pad + SMARTLIST + volume (B1/B2/B3)** | ✅ | `adapters/traktor/nmlReader.ts`, `nmlWriter.ts` | boot vs `/Volumes/…` verificato; loop conserva il pad; smartlist segnalate |
-| 8 | **Serato: reader GEOB (Markers2) + database V2 + crate** | 🧪 | `sidecar.py` (`parse_serato_markers2`, `cmd_read_serato`) | parser cue validato round-trip; database V2 letto su libreria reale (2 tracce); **manca libreria Serato reale con cue per validazione sul campo** |
+| 8 | **Serato: reader GEOB (Markers2) + database V2 + crate + scan cartella** | ✅ | `sidecar.py` (`parse_serato_markers2`, `cmd_read_serato`) | **validato su dati reali**: 95/96 file, 709 hot cue; end-to-end 44 tracce/309 cue con colori e label corretti. Fix del base64 (troncatura all'ultimo gruppo di 4) scoperto sui file veri. Legge sia il `database V2` sia, in scan, i file con tag Serato non nel database |
 | 9 | **Engine: decodifica cue `PerformanceData`** | ✅ | `adapters/engine/engineReader.ts` (`readEngineCues`) | 860 hot cue decodificati dal m.db reale; test sintetico |
 | 10 | **Beatgrid reale via ANLZ / GRID** | ⏸️ | — | bloccato: pyrekordbox 0.4.3 dà `ConstError` sul chunk PQT2; richiede parser ANLZ custom |
-| 11 | **Scrittura diretta cue nel master.db** | ⏸️ | — | rischio massimo (corruzione del DB cifrato con Rekordbox aperto); da fare solo dopo i fix 1-4 stabilizzati, dietro il gate `masterDbWrites` |
+| 11 | **Scrittura diretta nel master.db** | ✅ scrittura playlist (esistente) · ⏸️ scrittura cue | `sidecar.py` (`masterdb-create-playlist`) | **Sicurezza verificata in simulazione**: scritta una playlist+brani su una COPIA (ri-cifrata SQLCipher correttamente, riletta OK) con il master.db **reale intatto** (hash+mtime identici). pyrekordbox blocca la commit se Rekordbox è aperto (salvaguardia mantenuta). La scrittura dei CUE richiede l'inserimento low-level di righe `DjmdCue` (pyrekordbox non espone `add_cue`): fattibile, non ancora implementata |
 
 ## GUI — Conversione diretta X → Y
 
