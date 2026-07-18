@@ -1,7 +1,45 @@
 # Interoperabilità tra software DJ e conversione bidirezionale in CrateForge
 
 **Rekordbox · Serato · Traktor · VirtualDJ · Engine DJ**
-Report tecnico — 2026-07-14
+Report tecnico — 2026-07-14 · **Aggiornato al 2026-07-18**
+
+---
+
+> ## ⚠️ Aggiornamento 2026-07-18 — stato reale corrente
+>
+> Il corpo di questo report fotografa il codice al **2026-07-14**. Da allora la
+> maggior parte delle perdite di cue descritte come "di oggi" è stata **risolta**.
+> Verificato sui dati reali di questo Mac (Rekordbox 7.2.16, Traktor 4.4.2,
+> VirtualDJ 2026, Engine DJ, Serato) + review del codice. **Stato corrente:**
+>
+> **RISOLTO dopo il 2026-07-14:**
+> - **Rekordbox master.db legge `DjmdCue`** (roadmap #1): ingest reale = 6102 tracce,
+>   **3376 cue** (2229 hot / 1140 memory / 7 loop), 159 playlist. Non più 0 cue.
+> - **Writer RB XML emette i loop** (roadmap #2): `POSITION_MARK Type="4"` con Start/End.
+> - **Non-contiguità/off-by-one `Kind`** gestita (roadmap #3): `_rb_cue_row`/`_rb_pad_index`.
+> - **Traktor: bug volume B1/B2 corretti** — `traktorVolume`/`traktorLocationToPath`
+>   gestiscono boot/drive esterno/Windows; **loop-su-pad preservato** (non più HOTCUE=-1).
+> - **Engine: mappa key corretta a ordinamento Camelot** (`0 = B major`) e **cue letti**
+>   dai blob `PerformanceData`: ingest reale = 4397 tracce, **1200 cue/loop**.
+> - **Serato: lettura GEOB `Serato Markers2`** nel sidecar (`cmd_read_serato`): 96 file
+>   reali, **709 cue**; legge anche `database V2` e i `.crate`. L'adapter TS resta uno stub.
+> - **VirtualDJ: il reader importa** automix `realStart` e i marker `remix` come
+>   memory cue (19 sui dati reali), non più 0.
+> - **UDM esteso a schema v6** (roadmap #5): gain/rating/track_color/beatgrid.
+>
+> **Correzioni del 2026-07-18** (questa revisione):
+> - **Serato**: la scansione GEOB non si azzera più quando la root selezionata contiene
+>   `_Serato_` (bug substring → 709 cue persi); i `.crate` sono cercati **ricorsivamente**.
+> - **Traktor**: hot cue oltre l'8° pad (da VirtualDJ/Engine) non più scartati
+>   (degradano a `HOTCUE=-1`); `FILESIZE` ora riscritta nell'export.
+> - **Rekordbox**: il round-trip XML non fabbrica più un folder "ROOT" fantasma;
+>   `options.json` cercato nel percorso reale di rb6/7 (`…/rekordboxAgent/storage/`).
+>
+> **Ancora aperto (CONTRO reali):** writer Serato ed Engine assenti; **VirtualDJ writer
+> scarta le memory cue in silenzio**, non riscrive il colore, e tratta la lunghezza
+> loop come secondi anziché battiti (da validare); SMARTLIST Traktor non convertite;
+> beatgrid reale ANLZ bloccata (`PQT2 ConstError`); scrittura diretta cue nel master.db
+> ancora solo `create_playlist`. Dettaglio nelle sezioni sotto, ora annotate inline.
 
 ---
 
@@ -17,38 +55,39 @@ CrateForge è un convertitore basato su un **modello-pivot** (UDM: `NormTrack` /
 - Label/nome del cue (stringa).
 - Playlist statiche (albero) da Rekordbox-DB, Traktor, Engine.
 
-**Cosa si perde oggi (silenziosamente):**
-- **TUTTI i cue nell'import diretto da Rekordbox master.db**: il sidecar `cmd_ingest_masterdb` non interroga affatto `DjmdCue`.
-- **TUTTI i cue Serato** (adapter stub `available:false`) e **tutti i cue Engine** (blob `PerformanceData` non decodificato).
-- **Loop verso Rekordbox**: `xmlWriter.ts` esclude esplicitamente i loop.
-- **Colori dei cue** in ogni rotta che tocca Traktor (nessun RGB sorgente) e nel path master.db (manca la mappa indice-palette → RGB).
-- **Gain, rating, track-color, beatgrid reale (fase)**: mai trasportati — limite dell'UDM, non dei formati.
-- **Smart/intelligent list**: sempre materializzate come playlist statiche o ignorate (criteri persi).
-- **Playlist VirtualDJ**: nessun parsing dei `.vdjfolder`.
+**Cosa si perde ancora (silenziosamente):** *(aggiornato 2026-07-18 — le voci barrate erano nel report originale ma sono ORA RISOLTE)*
+- ~~TUTTI i cue nell'import diretto da Rekordbox master.db~~ → **RISOLTO**: `cmd_ingest_masterdb` legge `DjmdCue` (3376 cue reali).
+- ~~TUTTI i cue Serato~~ → **RISOLTO**: il sidecar (`cmd_read_serato`) legge i GEOB `Serato Markers2` (709 cue reali). ~~tutti i cue Engine~~ → **RISOLTO**: blob `PerformanceData` decodificato (1200 cue reali).
+- ~~Loop verso Rekordbox: `xmlWriter.ts` esclude i loop~~ → **RISOLTO**: emessi come `POSITION_MARK Type="4"`.
+- **Colori dei cue** in ogni rotta che tocca Traktor (nessun RGB sorgente) e nel path master.db (manca la mappa indice-palette → RGB). *(ancora aperto)*
+- **Memory cue verso VirtualDJ**: il writer VDJ le scarta in silenzio, senza warning. *(aperto — vedi §2.4)*
+- **Smart/intelligent list**: SMARTLIST Traktor segnalate con warning ma non convertite; smart RB materializzate come statiche (criteri persi). *(ancora aperto)*
+- **Playlist statiche VirtualDJ**: nessun parsing dei `.vdjfolder` statici (i filter-folder dinamici sono correttamente segnalati). *(ancora aperto)*
 
 **Dove CrateForge è già avanti:**
 - Pivot solido e già capace di rappresentare hot/memory/loop con precisione `REAL`.
 - Traktor e VirtualDJ leggono **e** scrivono.
-- Rekordbox: reader master.db (metadati + playlist), reader **e** writer Collection XML.
+- Rekordbox: reader master.db (metadati + playlist **+ cue**), reader **e** writer Collection XML (**loop inclusi**).
 - Reader XML già gestisce correttamente hot (`Num≥0`), memory (`Num<0`), loop (`End`) e colori RGB.
+- Serato ed Engine: **reader cue funzionanti e validati sui dati reali** (GEOB / `PerformanceData`).
+- UDM esteso a **schema v6** (gain/rating/track_color/beatgrid).
 - `incrementalBackup.ts` (snapshot DB + copia verificata a hash) è scritto e funzionante.
 
-**Dove è indietro:**
-- Reader Serato ed Engine-cue assenti; writer Serato ed Engine assenti.
-- Nessuna mappa colore indice ↔ RGB.
+**Dove è ancora indietro:**
+- **Writer** Serato ed Engine assenti (lettura ok, scrittura no).
+- Nessuna mappa colore indice ↔ RGB per i cue letti dal master.db.
 - Backup **non agganciato** al flusso di conversione.
-- Bug di portabilità confermati sui volumi non-boot Traktor.
-- Beatgrid sempre sintetica a BPM costante.
+- Beatgrid reale ANLZ (RB) ancora sintetica a BPM costante (`PQT2 ConstError`).
 
-**Priorità #1 assoluta:** leggere `DjmdCue` dal master.db. È un fix a basso costo (pyrekordbox li espone già) e altissimo valore: elimina la perdita più grave e silenziosa dell'intera pipeline.
+**Nota storica:** la "Priorità #1 assoluta" del report originale — leggere `DjmdCue` dal master.db — **è stata implementata** ed è ora la base dell'import RB nativo.
 
 ---
 
 ## 2. Analisi per software
 
-### 2.1 Rekordbox 7.2.14 (Pioneer / AlphaTheta)
+### 2.1 Rekordbox 7.2.16 (Pioneer / AlphaTheta)
 
-Libreria reale ispezionata: `/Users/dj-john/Library/Pioneer/rekordbox/` — 6102 brani (`DjmdContent`), 3368 cue (`DjmdCue`), 158 playlist.
+Libreria reale ispezionata: `/Users/dj-john/Library/Pioneer/rekordbox/` — 6102 brani (`DjmdContent`), ~3368 cue (`DjmdCue`), ~158 playlist al 2026-07-14. *(Ingest reale del 2026-07-18: 6102 tracce, 3376 cue, 159 playlist — la libreria è cresciuta di poco; versione app reale 7.2.16.0342.)*
 
 #### Libreria / storage
 DB primario **cifrato SQLCipher**: `master.db` (~300 MB). L'header **non** è `SQLite format 3` (primi byte `77 82 f1 a3 f1 52 9b a0…`) → confermato cifrato; pyrekordbox 0.4.3 lo apre con la chiave **DB6** in cache. Schema con tabelle `Djmd*` normalizzate via FK (`ArtistID→DjmdArtist.Name`, `KeyID→DjmdKey.ScaleName`, `ColorID→DjmdColor`, `AlbumID/GenreID/LabelID`).
@@ -141,19 +180,19 @@ BPM intero ×100; Key via `KeyID→DjmdKey.ScaleName` (adapter → Camelot). Bea
 #### Stato adapter CrateForge
 Path: `src/adapters/rekordbox/` (**solo writer**: `xmlWriter.ts`, `inboxXml.ts`, `relocationXml.ts`, `setXml.ts`). Lettura in `python-sidecar/sidecar.py` (`cmd_ingest_masterdb`, `cmd_read_history`, `cmd_masterdb_create_playlist`) e `src/core/xmlCollection.ts`.
 
-- **Legge master.db** (`cmd_ingest_masterdb`): `DjmdContent` (metadati base) + `DjmdPlaylist/DjmdSongPlaylist` (albero, `Attribute→folder`). **NON legge `DjmdCue`.**
-- **Legge XML** (`xmlCollection.ts`): `COLLECTION/TRACK` + `POSITION_MARK` (hot `Num≥0`, memory `Num<0`, loop `End→length_ms`) + colori RGB + albero playlist.
-- **Scrive XML** (`xmlWriter.ts`): `DJ_PLAYLISTS` con `TRACK`, `TEMPO` (griglia BPM-costante sintetica), `POSITION_MARK` per hot (cap 8, con `Red/Green/Blue`) e memory (`Num=-1`, senza colore), albero `NODE`. **Loop esclusi.**
+- **Legge master.db** (`cmd_ingest_masterdb`): `DjmdContent` (metadati base) + `DjmdPlaylist/DjmdSongPlaylist` (albero, `Attribute→folder`) **+ `DjmdCue`** (hot/memory/loop via `_rb_cue_row`, con `_rb_pad_index` per la non-contiguità di `Kind`). *(2026-07-18: 3376 cue reali importati.)*
+- **Legge XML** (`xmlCollection.ts`): `COLLECTION/TRACK` + `POSITION_MARK` (hot `Num≥0`, memory `Num<0`, loop `End→length_ms`) + colori RGB + albero playlist. *(Il folder tecnico `ROOT` viene ora scavalcato — round-trip idempotente.)*
+- **Scrive XML** (`xmlWriter.ts`): `DJ_PLAYLISTS` con `TRACK`, `TEMPO` (griglia BPM-costante sintetica), `POSITION_MARK` per hot (cap 8, con `Red/Green/Blue`), memory (`Num=-1`, senza colore) **e loop (`Type="4"` con Start/End)**, albero `NODE`.
 - **Scrittura diretta playlist** nel master.db via `cmd_masterdb_create_playlist` (modalità Esperto).
 
-**PRO:** unico software con reader DB + reader/writer XML; XML è la lingua franca ingeribile da Serato/Engine/VirtualDJ.
-**CONTRO (mancante):** (1) **cue mai letti dal DB** → import nativo = 0 cue; (2) nessuna mappa indice-colore → RGB; (3) cap 8, slot 9-16 persi; (4) off-by-one `Kind`(1-based DB)/`Num`(0-based XML) non gestito; (5) writer non emette loop; (6) beatgrid reale, waveform, rating, track-color, gain, MyTag, DJPlayCount, ISRC, `DjmdHotCueBanklist`, smart list, sampler non gestiti.
+**PRO:** unico software con reader DB (**metadati + cue**) + reader/writer XML; XML è la lingua franca ingeribile da Serato/Engine/VirtualDJ.
+**CONTRO (mancante, aggiornato 2026-07-18):** ~~(1) cue mai letti dal DB~~ **risolto**; (2) nessuna mappa indice-colore → RGB per i cue del DB; (3) cap 8, slot 9-16 persi **via XML** (il writer diretto DB li conserverebbe); ~~(4) off-by-one `Kind`~~ **gestito**; ~~(5) writer non emette loop~~ **risolto**; (6) beatgrid reale, waveform, MyTag, DJPlayCount, ISRC, `DjmdHotCueBanklist`, smart list, sampler non gestiti (rating/track-color/gain ora coperti dallo schema UDM v6).
 
 ---
 
 ### 2.2 Serato DJ Pro
 
-Libreria: `/Users/dj-john/Music/_Serato_/` con `database V2` (1970 byte, 2 brani). `Subcrates/` e `SmartCrates/` **vuote**. Seconda libreria su `/Volumes/DISCO-C/_Serato_/Library` (permessi 700, vuota). **Punto chiave: le cue reali NON stanno nelle librerie ma nei tag ID3 dei file audio** — 96 file `.mp3` sotto `/Users/dj-john/Music/` contengono il frame GEOB `Serato Markers2`.
+Libreria: `/Users/dj-john/Music/_Serato_/` con `database V2` (1970 byte, 2 brani). `Subcrates/` contiene **un crate reale** (`Serato Stems/Stems.crate`, 6 brani — corretto in `docs/CATALOGO-OPERAZIONI.md`); `SmartCrates/` vuota. Seconda libreria su `/Volumes/DISCO-C/_Serato_/Library` (permessi 700, vuota). **Punto chiave: le cue reali NON stanno nelle librerie ma nei tag ID3 dei file audio** — 96 file `.mp3` sotto `/Users/dj-john/Music/` contengono il frame GEOB `Serato Markers2`.
 
 #### Libreria / storage
 `database V2` = binario a **chunk**. Header: magic ASCII `vrsn` (4 byte) + uint32 BE length + stringa UTF-16BE `2.0/Serato Scratch LIVE Database`. Ogni brano = chunk `otrk` `[tag 4-char ASCII + uint32 BE length + body]`. Convenzione sul 1° carattere del tag:
@@ -170,7 +209,7 @@ Prova reale: 2 chunk `otrk`; `pfil='Users/dj-john/Music/Music/Media.localized/Mu
 #### Playlist / crate
 Ogni crate = un file `.crate` separato in `Subcrates/`. Gerarchie via separatore `%%` nel **nome** del file (`Estate%%House.crate` = crate "House" dentro cartella "Estate"). `SmartCrates/` contiene gli smart crate (`.scrate`). **Nessun file-indice unico**: la lista si ricava enumerando i file.
 
-> ⚠️ In questo Mac `Subcrates/` e `SmartCrates/` sono **vuote**: struttura `.crate`/`.scrate` e gerarchia `%%` descritte da conoscenza del formato, **non** verificate su file reali.
+> ⚠️ In questo Mac `Subcrates/` contiene solo `Serato Stems/Stems.crate` (un crate reale, annidato in una sottocartella di raggruppamento) e `SmartCrates/` è vuota: la gerarchia `%%` e gli `.scrate` restano descritti da conoscenza del formato, **non** verificati su file reali.
 
 #### Backup
 `_Serato_/Export Backups/backup-YYYYMMDD_HHMMSS+ZZZZ.zip`, ciascuno contenente **unicamente** una copia del `database V2` (verificato `unzip -l`: da 72 a 1970 byte). 6 backup presenti (2026-04-18 → 2026-07-14). **Il backup salva SOLO il database, NON i crate né i tag ID3 con le cue** → affidarsi ad esso per proteggere le cue è **errato**.
@@ -211,20 +250,21 @@ BeatGrid (GEOB `Serato BeatGrid`): binario, versione `0x0100` + uint32 BE count 
 
 > Nota: alcuni file contengono GEOB **non-Serato** (`CuePoints` application/json, `Key`, `Energy`) scritti da tool di terze parti (probabile Mixed In Key), da non confondere.
 
-#### Stato adapter CrateForge
-Path: `src/adapters/serato/index.ts` (496 byte). Esporta **solo** `SERATO_STATUS = { available:false, reason:'Export diretto verso Serato in arrivo…' }`. UI marca `imp:'none' exp:'none'` con badge `comingSoon`.
+#### Stato adapter CrateForge *(aggiornato 2026-07-18: la LETTURA Serato è stata implementata)*
+Path: l'adapter TS `src/adapters/serato/index.ts` resta uno **stub** (`SERATO_STATUS.available=false`: nessuna **scrittura** diretta). Ma la **lettura** vive nel sidecar Python (`cmd_read_serato` in `python-sidecar/sidecar.py`), esposta via `src/main/ipc.ts` e chiamata dal Converter.
 
-- **Legge:** nulla. **Scrive:** nulla.
-- Il pivot è **pronto**: `NormCue` e la tabella `cues` possono già rappresentare hot/memory/loop con `position_ms/length_ms/color/label`. Il writer Rekordbox legge già queste cue.
+- **Legge (sidecar):** `database V2` (framing tag+len BE, testo UTF-16BE, path volume-relativi), i `.crate` in `Subcrates/` (**ora ricorsivamente**, incluse le sottocartelle di raggruppamento) e soprattutto i **GEOB `Serato Markers2`** nei tag dei file audio (`parse_serato_markers2`). *(2026-07-18: 96 file reali, 709 hot cue, decodifica validata byte-per-byte; il base64 con gruppo parziale è gestito lossless.)*
+- **Scrive:** nulla (writer GEOB ancora da fare).
+- Il pivot è **pronto**: `NormCue` e la tabella `cues` rappresentano hot/memory/loop con `position_ms/length_ms/color/label`; il writer Rekordbox/Traktor/VDJ consuma già queste cue.
 
-**PRO:** formato ben documentato; conversione unità triviale (ms uint32 → `position_ms` diretto; RGB → hex diretto).
-**CONTRO (mancante):** tutto il lato Serato — (1) reader `database V2`; (2) reader `.crate`/`.scrate`; (3) reader GEOB (`Markers2`/`Markers_`/`BeatGrid`/`Autotags`/`Overview`); (4) writer (database + GEOB). **Rischio elevato:** scrivere le cue significa **mutare i tag ID3 dei file audio reali** → obbligo copie + backup dei file.
+**PRO:** formato ben documentato; conversione unità triviale (ms uint32 → `position_ms` diretto; RGB → hex diretto); **reader completo e validato sui dati reali**.
+**CONTRO (mancante):** il **writer** Serato (database + GEOB) — scrivere le cue significa **mutare i tag ID3 dei file audio reali** → obbligo copie + backup dei file. La lettura degli altri GEOB (`Markers_` legacy, `BeatGrid`, `Autotags`, `Overview`) è parziale.
 
 ---
 
 ### 2.3 Traktor Pro 4 (v4.4.2)
 
-Libreria: `/Users/dj-john/Documents/Native Instruments/Traktor 4.4.2/collection.nml` — XML `VERSION="20"`, `PROGRAM="Traktor Pro 4"`. 13 `ENTRY`, 119 `CUE_V2`, 7 nodi playlist (3 `SMARTLIST` + 4 liste). Tutti Factory Sounds.
+Libreria: `/Users/dj-john/Documents/Native Instruments/Traktor 4.4.2/collection.nml` — XML `VERSION="20"`, `PROGRAM="Traktor Pro 4"`. Al 2026-07-14: 13 `ENTRY`. *(2026-07-18 la libreria è cresciuta: 4735 `ENTRY`, 4822 `CUE_V2` di cui 78 cue utente — 75 hot + 3 loop — il resto beatgrid; 3 `SMARTLIST` + liste. Nessun cambiamento di formato, solo più contenuti.)*
 
 #### Libreria / storage
 Singolo file XML testuale `collection.nml` (**non** SQLite). Radice `NML VERSION="20"` con `HEAD`, `COLLECTION ENTRIES="13"`, `SETS`, `PLAYLISTS`. Ogni brano = `ENTRY` con figli: `LOCATION(DIR/FILE/VOLUME/VOLUMEID)`, `ALBUM`, `INFO(BITRATE, LABEL, KEY testuale es "Ebm", PLAYTIME sec, PLAYTIME_FLOAT, FILESIZE in KiB)`, `TEMPO(BPM float 6 decimali)`, `LOUDNESS(PEAK_DB/PERCEIVED_DB/ANALYZED_DB)`, `MUSICAL_KEY(VALUE 0-23)`, e N × `CUE_V2`. `AUDIO_ID` = fingerprint acustico base64. Traktor può mirrorare l'analisi in un frame ID3 `PRIV:TRAKTOR4` (~100 KB, marker `DMRT/RDH`/waveform), ma **CrateForge legge solo la NML**.
@@ -238,7 +278,7 @@ Albero sotto `PLAYLISTS` con `NODE` ricorsivi. Radice `NODE TYPE="FOLDER" NAME="
 #### Cartelle musica & path
 `LOCATION`: `VOLUME="Macintosh HD"` (nome del volume, **non** mount point), `DIR` con componenti separati da `/:` (con `/:` iniziale e finale), `FILE`. Su Windows `VOLUME="C:"`. Traktor identifica per `VOLUME+DIR+FILE` con fallback `AUDIO_ID`. Reader `traktorLocationToPath()` splitta `DIR` su `/:` e ricostruisce path POSIX assoluto.
 
-> ⚠️ **BUG CONFERMATO:** su macOS il reader (`nmlReader.ts:20`) **scarta il nome VOLUME** e ricostruisce da `/` → un file su `/Volumes/USB/…` diventa `/Music/…` (path **errato** per volumi non-boot). Il writer (`nmlWriter.ts:141` `traktorVolume()`) matcha solo `^[A-Za-z]:` e scrive `VOLUME=""` per ogni path macOS/Linux.
+> ✅ **BUG B1/B2 RISOLTO (2026-07-18):** il report originale segnalava che il reader scartava il VOLUME (file su `/Volumes/USB/…` → `/Music/…`) e il writer scriveva `VOLUME=""` su macOS. **Nel codice attuale non è più così:** `traktorLocationToPath` distingue volume di boot (montato a `/`) da drive esterno e ricostruisce `/Volumes/<vol>/…` per i non-boot; `traktorVolume` restituisce il nome reale del volume di boot (`Macintosh HD`) o del mount esterno, e `C:` su Windows. Verificato sui path reali.
 
 #### Hot cue & loop
 Tutti `CUE_V2` dentro `ENTRY`. Distinti da `TYPE` (0=cue, 1=fade-in, 2=fade-out, 3=load, 4=grid, 5=loop) e `HOTCUE` (numero pad **0-based**, oppure `-1` = non assegnato = memory/unmapped). Un saved loop = `TYPE=5` con `LEN>0`; **può avere `HOTCUE≥0`** (loop su pad).
@@ -260,10 +300,10 @@ BPM `TEMPO@BPM` float 6 decimali. Key doppia: `INFO@KEY` testuale + `MUSICAL_KEY
 Path: `src/adapters/traktor/` (`nmlReader.ts`, `nmlWriter.ts`, `traktorKeys.ts`).
 
 - **Legge:** `ENTRY→NormTrack`; `CUE_V2→NormCue` (`mapCue`: TYPE 0=cue, 5=loop; `hotcue≥0→'hot'` con index, `hotcue=-1→'memory'`; `TYPE 5` o `LEN>0→'loop'`); scarta TYPE 1/2/3/4. Playlist `FOLDER+PLAYLIST` ricorsive.
-- **Scrive:** `ENTRY` con `LOCATION/ALBUM/INFO/TEMPO/MUSICAL_KEY`, un `Beat Marker TYPE=4` di ancoraggio, hot cue `TYPE=0` (cap `index<8`), memory `TYPE=0 HOTCUE=-1`, loop `TYPE=5` con `LEN`; playlist piatte.
+- **Scrive:** `ENTRY` con `LOCATION/ALBUM/INFO/TEMPO/MUSICAL_KEY` (**+ `FILESIZE` dal 2026-07-18**), un `Beat Marker TYPE=4` di ancoraggio, hot cue `TYPE=0` (cap `index<8`; **gli hot oltre l'8° pad o senza pad ora degradano a `HOTCUE=-1` invece di essere scartati**), memory `TYPE=0 HOTCUE=-1`, loop `TYPE=5` con `LEN` (**pad preservato se libero**); playlist piatte.
 
 **PRO:** unico formato (con VirtualDJ) che legge **e** scrive; ms-float preservato in `REAL`.
-**CONTRO (mancante):** (1) colori cue sempre null (NML non li ha) → persi in entrambe le direzioni; (2) **loop-su-pad**: writer forza `HOTCUE=-1` → perde l'assegnazione al pad (dato reale: loop su HOTCUE=2 e 6); (3) SMARTLIST ignorate (3/7 nodi); (4) LOUDNESS/autogain non letto; (5) ancora/fase beatgrid persa; (6) **volume non-boot mal ricostruito su macOS**; (7) rating/COVERARTID/REPEATS non gestiti.
+**CONTRO (mancante, aggiornato 2026-07-18):** (1) colori cue sempre null (NML non li ha) → persi in entrambe le direzioni; ~~(2) loop-su-pad: writer forza HOTCUE=-1~~ **risolto** (pad preservato se libero); (3) SMARTLIST ignorate (segnalate con warning, non convertite); (4) LOUDNESS/autogain non letto; (5) beatgrid: marker `TYPE=4` emesso **senza figlio `<GRID>`** e con anchor a 0 (Traktor potrebbe non riconoscerlo come griglia); ~~(6) volume non-boot mal ricostruito~~ **risolto**; (7) COVERARTID/REPEATS non gestiti; (8) UUID playlist non conforme (`crateforge-N`, non 32-hex → rischio collisioni); (9) export appiattisce l'albero cartelle.
 
 ---
 
@@ -300,11 +340,11 @@ BPM `Scan@Bpm` sec-per-beat (`60/x`); `AltBpm` half/double; `Phase` = offset bea
 #### Stato adapter CrateForge
 Path: `src/adapters/virtualdj/vdjReader.ts` + `vdjWriter.ts`.
 
-- **Legge:** `Song→` title/artist(Author)/album/genre/year, bpm via `vdjBpm()` (`v<10 → 60/v` else literal), key, durata da `Infos@SongLength`, filesize. `mapPoi` mappa `Type cue/hotcue→'hot'` (`index=Num-1`), `loop/Size>0→'loop'` (`lengthMs=Size*1000`), `positionMs=Pos*1000`, `label=Name`.
+- **Legge:** `Song→` title/artist(Author)/album/genre/year, bpm via `vdjBpm()` (`v<10 → 60/v` else literal), key, durata da `Infos@SongLength`, filesize. `mapPoi` mappa `Type cue/hotcue→'hot'` (`index=Num-1`), `loop/Size>0→'loop'` (`lengthMs=Size*1000`), **`automix realStart`/`remix`→'memory'**, `positionMs=Pos*1000`, `label=Name`, `Poi@Color→color`. *(2026-07-18: libreria reale = 10 song, 19 memory cue importate — non più 0.)*
 - **Scrive:** un **nuovo** `database.xml` (Version 2024); `Tags/Infos/Scan(Bpm=60/bpm, Key)` + `Poi` per hot (`Type=cue`, `Pos.toFixed(4)`, `Num`) e loop (`Type=loop`, `Size`).
 
-**PRO:** legge e scrive; conversione secondi→ms diretta.
-**CONTRO (mancante):** (1) **`mapPoi` scarta automix/remix** → questa libreria reale importa **0 cue**; (2) `Poi@Color` mai letto (`color=null`); (3) `Poi@Point` scartato; (4) `.vdjfolder` mai parsati → **0 playlist**; (5) `Phase`/`AltBpm` non letti; (6) memory cue mai esportati; (7) Size loop assunto in secondi ma non verificato; (8) `toFixed(4)` arrotonda la precisione ~1e-6 s.
+**PRO:** legge e scrive; conversione secondi→ms diretta; il reader ora recupera i marker automix/remix.
+**CONTRO (mancante, aggiornato 2026-07-18):** ~~(1) mapPoi scarta automix/remix → 0 cue~~ **risolto in lettura** (ma vedi #6); (2) il **writer** non riemette `Poi@Color` → colore perso in scrittura; (3) `Poi@Point` scartato; (4) `.vdjfolder` statici mai parsati → 0 playlist (i filter-folder dinamici sono correttamente segnalati); (5) `Phase`/`AltBpm` non letti; (6) **il writer scarta in silenzio le memory cue** → su libreria reale il round-trip perde 19/19 cue, e ogni `RB/Traktor→VDJ` perde le memory cue (nessun warning); (7) `Size` loop trattato come **secondi** dal reader/writer, ma in VirtualDJ è in **battiti** — da validare su un loop VDJ reale; (8) `toFixed(4)` arrotonda la precisione ~1e-6 s.
 
 ---
 
@@ -393,9 +433,10 @@ Verifica: trackId 6 → beat 0 (downbeat/**anchor**) a sample 49 295 (1.118 s), 
 - **Rating**: `Track.rating` INTEGER 0–100 (es. 80). **Colore traccia**: non presente come colonna dedicata in questo schema (i colori sono per-cue, non per-traccia). **Beatgrid**: anchor = marker beat 0 (vedi sopra), con grid `default` + `adjusted`.
 
 #### Stato adapter CrateForge
-- **`src/adapters/engine/engineReader.ts`** — legge in sola lettura (`better-sqlite3`, `readonly`), introspezione difensiva delle colonne. **Importa già**: brani (`title/artist/album/genre/year`), `bpmAnalyzed→bpm`, `length→durationS`, `path` (reso assoluto risalendo di 2 livelli), `fileBytes→filesize`; **playlist** seguendo correttamente la catena `nextEntityId` (testa = entity non referenziata) e `parentListId→parentSourceId`.
-- **NON fa**: (1) **cue/loop** — imposta `cues: []` e avvisa esplicitamente *"cue e loop (blob PerformanceData) non ancora importati"*; (2) `Smartlist`; (3) nessun `isFolder`.
-- **BUG VERIFICATO — mappa key errata**: `ENGINE_KEY` in `engineReader.ts` (righe 17–22) è **chromatica** (`0:'C', 1:'C#', … 12:'Cm'`) ma l'encoding reale è **Camelot-ordinato** (`0 = B major`). Risultato: `musicalKey` sbagliato su **ogni** brano. Va sostituita con la mappa Camelot verificata sopra.
+- **`src/adapters/engine/engineReader.ts`** — legge in sola lettura (`better-sqlite3`, `readonly`), introspezione difensiva delle colonne. **Importa già**: brani (`title/artist/album/genre/year`), `bpmAnalyzed→bpm`, `length→durationS`, `path` (reso assoluto risalendo di 2 livelli), `fileBytes→filesize`, `rating`; **playlist** seguendo correttamente la catena `nextEntityId` (testa = entity non referenziata) e `parentListId→parentSourceId`.
+- **Legge i cue/loop (RISOLTO 2026-07-18):** `readEngineCues` decomprime `quickCues` (framed zlib, header BE, posizioni in sample double BE, colore ARGB) e `loops` (LE, non compresso), con `sampleRateOf` per-traccia. *(Ingest reale: 4397 tracce, 1200 cue/loop; campione verificato byte-per-byte contro §2.5.)*
+- **NON fa ancora**: (1) `Smartlist`; (2) nessun `isFolder`; (3) writer (scrittura verso Engine assente).
+- ~~**BUG mappa key errata**~~ **RISOLTO 2026-07-18**: `ENGINE_KEY` è ora **Camelot-ordinata** (`0 = B major`, `camelot = (key>>1)+1`, pari=major/dispari=minor), non più cromatica. Key corretta su tutti i brani reali.
 - **`src/adapters/engine/index.ts`** — `ENGINE_STATUS.available = false`: **nessuna scrittura diretta** verso Engine (rischio corruzione schema), rimanda a export Rekordbox XML / Traktor NML.
 - **Pivot `src/core/foreignImport.ts`** — `NormCue { type:'hot'|'memory'|'loop', index, positionMs, lengthMs, color, label }`. Mapping Engine→pivot ben coperto: hot cue→`type:'hot'`, loop→`type:'loop'` con `lengthMs = end−start`. Engine **non ha memory cue** (solo 8 hot + 1 main + 8 loop) → il main cue potrebbe mappare a `'memory'`.
 - **Cosa serve per LEGGERE i cue Engine**: per ogni `trackId` → leggere `sampleRate` da `trackData`/`beatData`; decomprimere `quickCues` (zlib, header BE) e parsare gli 8 slot; parsare `loops` (LE); convertire sample→ms con **la sample rate del brano** (non 44100 fisso); ARGB→hex; popolare `NormCue[]`.
@@ -412,7 +453,7 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 | **Rekordbox** (DjmdCue) | `InMsec` ms interi. `InFrame = floor(InMsec*0.15)` @150 fps | `position_ms = InMsec` | `InMsec = round(position_ms)`; `InFrame = (InMsec*150)//1000` | Nessuna (intero) |
 | **Rekordbox** (XML) | `Start` = SECONDI 3 dec | `position_ms = Start*1000` | `Start = (position_ms/1000).toFixed(3)` | Quantizza a 1 ms |
 | **Serato** (Markers2) | uint32 BE **ms interi** | `position_ms = uint32` | `uint32 = round(position_ms)` | Nessuna |
-| **Traktor** (CUE_V2) | `START`/`LEN` ms **float** | `position_ms = parseFloat(START)` | `START = position_ms.toFixed(6)` | Nessuna → pivot; sub-ms perso via XML RB |
+| **Traktor** (CUE_V2) | `START`/`LEN` ms **float** | `position_ms = parseFloat(START)` | `START = position_ms.toFixed(3)` | ~1 µs (3 decimali, ben sotto il campione) |
 | **VirtualDJ** (Poi) | `Pos` **secondi** float | `position_ms = Pos*1000` | `Pos = (position_ms/1000).toFixed(4)` | 0.1 ms in uscita |
 | **Engine** | **sample** (double, BE) | `position_ms = sample/SR*1000` | `sample = position_ms/1000*SR` | **SR per-traccia** (44.1/48/22/32 kHz), mai fisso a 44.1k |
 
@@ -432,8 +473,8 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 
 **Criticità sui tipi:**
 - **Off-by-one indice pad**: Rekordbox DB `Kind` è **ordinale non-contiguo** (1,2,3,**5**,6,7,8,9 — il 4 è riservato ai loop), XML `Num` 0-based, Traktor `HOTCUE` 0-based, VirtualDJ `Num` 1-based, Serato 0-based. Il pivot deve fissare **una** convenzione (raccomando **0-based interno**) e ogni adapter converte. Attenzione: per Rekordbox-DB **non** basta `index=Kind-1`, va gestita la non-contiguità (Kind≥5 → pad = Kind-2).
-- **Loop su pad**: Traktor `TYPE=5 HOTCUE=2`. Il pivot lo rappresenta (`type=loop` + `index`), ma il writer Traktor forza `HOTCUE=-1` → perde l'assegnazione.
-- **Memory cue** è quasi esclusivo Rekordbox/Traktor(unmapped). Verso Serato/VirtualDJ/Engine va **promosso a hot** (consumando slot) o **scartato**: entrambe lossy, da esporre all'utente.
+- **Loop su pad**: Traktor `TYPE=5 HOTCUE=2`. Il pivot lo rappresenta (`type=loop` + `index`) e **il writer Traktor ora preserva il pad** se libero (prima forzava `HOTCUE=-1`) — *risolto*.
+- **Memory cue** è quasi esclusivo Rekordbox/Traktor(unmapped). Verso Serato/VirtualDJ/Engine va **promosso a hot** (consumando slot) o **scartato**: entrambe lossy, da esporre all'utente. ⚠️ Il writer **VirtualDJ** oggi le scarta in silenzio (da correggere).
 
 ### 3.3 Colori: palette fisse vs RGB liberi
 
@@ -469,7 +510,7 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 - **Tipo memory** verso Serato/VirtualDJ/Engine.
 - **Colore** in ogni rotta con Traktor, o path master.db senza mappa indice→RGB.
 - **Slot 9-16** RB7 via XML/Serato/Engine.
-- **Loop**: esclusi dal writer XML RB; loop-su-pad perso nel writer Traktor.
+- **Loop**: ~~esclusi dal writer XML RB; loop-su-pad perso nel writer Traktor~~ **entrambi risolti** (writer RB emette i loop; Traktor preserva il pad).
 - **Beatgrid/fase**: griglia sintetica BPM-costante da 0 → disallinea cue su tempo variabile o downbeat ≠ 0.
 - **Off-by-one/non-contiguità** indice pad se non gestita.
 - **Quantizzazione**: sub-ms Traktor → 1 ms via XML RB; ms → sample via Engine.
@@ -490,15 +531,17 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 
 **Conclusione:** solo **Serato** (e in parte Engine) è progettato per la portabilità drive-to-drive. In Serato e Traktor le cue sono legate al path/tag → perdere il collegamento = perdere le cue.
 
-### 4.2 Bug di portabilità CONFERMATI nel codice
+### 4.2 Bug di portabilità (stato aggiornato 2026-07-18)
 
-| # | File / riga | Difetto | Impatto |
+| # | File / riga | Difetto (report 2026-07-14) | Stato attuale |
 |---|---|---|---|
-| B1 | `traktor/nmlWriter.ts:141` `traktorVolume()` | regex solo `^[A-Za-z]:` → `VOLUME=""` su macOS/Linux | Traktor non ritrova i file su altro Mac/drive |
-| B2 | `traktor/nmlReader.ts:20` `traktorLocationToPath()` | scarta `volume`, ricostruisce da `/` | file su `/Volumes/USB/…` → `/Music/…` (path errato) |
-| B3 | `common.ts:88` `pathToLocation()` | non normalizza il nome-volume | round-trip cross-drive incoerente |
-| B4 | `relocator/` + `relocationXml.ts` | rilocazione SOLO Rekordbox | inutilizzabile per Traktor/VDJ/Serato/Engine |
-| B5 | `relocator.ts:58 matchByFilename` | match solo per basename; `fingerprint` in schema ma non implementato | nomi uguali → `ambiguous`, nessun fallback acustico |
+| B1 | `traktor/nmlWriter.ts` `traktorVolume()` | regex solo `^[A-Za-z]:` → `VOLUME=""` su macOS/Linux | ✅ **RISOLTO** — restituisce il nome reale del volume boot/esterno; `C:` su Windows |
+| B2 | `traktor/nmlReader.ts` `traktorLocationToPath()` | scarta `volume`, ricostruisce da `/` | ✅ **RISOLTO** — ricostruisce `/Volumes/<vol>/…` per drive non-boot |
+| B3 | `common.ts` `pathToLocation()` | non normalizza il nome-volume | ✅ **Mitigato** — la lettera di drive Windows non è più percent-encodata |
+| B4 | `relocator/` + `relocationXml.ts` | rilocazione SOLO Rekordbox | ⏳ **aperto** — inutilizzabile per Traktor/VDJ/Serato/Engine |
+| B5 | `relocator.ts matchByFilename` | match solo per basename; fingerprint non implementato | ⏳ **aperto** — nessun fallback acustico |
+
+> ⚠️ **Nota (2026-07-18):** un residuo di B2 resta per un input realistico — se il NML proviene da un altro Mac il cui volume di boot non è montato qui, `traktorLocationToPath` lo tratta come drive esterno (`/Volumes/<nome>`) invece che come `/`. Tradeoff documentato nei commenti; non un blocco per i file locali.
 
 ### 4.3 Backup nativi
 
@@ -521,7 +564,7 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 ### 4.5 Raccomandazioni path & backup
 
 1. **P0 — Backup automatico obbligatorio prima di ogni conversione distruttiva.** Agganciare `executeBackup()` nel flusso di export. Regola dura: se la destinazione muta i file audio (writer Serato futuro, scrittura diretta master.db), il **backup dei file audio è bloccante**.
-2. **P0 — Fix volume Traktor macOS (B1+B2):** `traktorVolume()` deve restituire il nome reale del volume; `traktorLocationToPath()` deve ricostruire `/Volumes/<name>/…` per drive non-boot.
+2. ~~**P0 — Fix volume Traktor macOS (B1+B2)**~~ **FATTO (2026-07-18):** `traktorVolume()` restituisce il nome reale del volume; `traktorLocationToPath()` ricostruisce `/Volumes/<name>/…` per drive non-boot.
 3. **P1 — Adottare internamente lo schema path VOLUME-RELATIVO di Serato** come rappresentazione canonica: in UDM memorizzare `(volume_name, volume_relative_path)` oltre al path assoluto.
 4. **P1 — Snapshot del backup NATIVO della destinazione + avviso software-in-esecuzione** prima di leggere/scrivere.
 5. **P1 — Relocator multi-formato (B4):** writer di rilocazione per Traktor (preservando `AUDIO_ID`), VirtualDJ (nuovo `FilePath`), Serato (ricalcolo path volume-relativo).
@@ -540,31 +583,33 @@ Il pivot memorizza `position_ms REAL` e `length_ms REAL` (millisecondi assoluti,
 
 | # | Sorgente → Dest. | Sopra il cofano | Sotto il cofano | Pl | Cue | Grid | Gain | Rat | Stato CF oggi |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | RB → Serato | Serato "Import from Rekordbox" (serve RB XML manuale) | DjmdCue → GEOB Markers2 | L | **H** | H | H | H | Rotto: DB-cue non letti; writer Serato stub |
-| 2 | RB → Traktor | nessun import nativo | DjmdCue → CUE_V2 | L | **H** | H | H | H | Cue persi (DB); NML writer ok |
-| 3 | RB → VirtualDJ | VDJ legge libreria RB (auto) | DjmdCue → Poi | M | **H** | H | H | H | Cue persi in ingresso |
-| 4 | RB → Engine | Engine importa RB con cue (auto) | DjmdCue → PerformanceData | M | **H** | H | H | H | Writer Engine assente |
-| 5 | Serato → RB | RB XML da terzi | GEOB → POSITION_MARK | M | **H** | H | H | H | Reader Serato assente |
-| 6 | Serato → Traktor | nessun nativo | GEOB → CUE_V2 | M | **H** | H | H | H | Reader Serato assente |
-| 7 | Serato → VirtualDJ | VDJ legge crate+GEOB (auto) | GEOB → Poi | M | **H** | H | H | H | Reader Serato assente |
-| 8 | Serato → Engine | Engine importa Serato (auto) | GEOB → PerformanceData | M | **H** | H | H | H | Reader + writer assenti |
-| 9 | Traktor → RB | nessun nativo | CUE_V2 → POSITION_MARK; **loop persi** | L | M | H | H | H | **Parziale**; loop persi, colori assenti, grid sintetica |
-| 10 | Traktor → Serato | nessun nativo | CUE_V2 → GEOB | L | M | H | H | H | Reader NML ok; writer Serato assente |
-| 11 | Traktor → VirtualDJ | VDJ legge NML (auto) | CUE_V2 → Poi | L | M | H | H | H | **Entrambi ok**; smartlist perse, loop-su-pad perde slot |
-| 12 | Traktor → Engine | Engine importa Traktor (auto) | CUE_V2 → PerformanceData | L | M | H | H | H | Writer Engine assente |
-| 13 | VirtualDJ → RB | nessun nativo | Poi → POSITION_MARK; **automix/remix scartati** | H | M | H | H | H | reader scarta automix/remix e .vdjfolder → 0 pl, 0 cue |
-| 14 | VirtualDJ → Serato | nessun nativo | Poi → GEOB | H | M | H | H | H | writer Serato assente |
-| 15 | VirtualDJ → Traktor | nessun nativo | Poi → CUE_V2 | H | M | H | H | H | reader VDJ perde pl e POI non-cue |
-| 16 | VirtualDJ → Engine | parziale nativo | Poi → PerformanceData | H | M | H | H | H | writer Engine assente |
-| 17 | Engine → RB | Engine esporta RB XML | PerformanceData → POSITION_MARK | L | **H** | H | H | H | reader Engine metadati+pl, **cue=[]** |
-| 18 | Engine → Serato | nessun nativo | PerformanceData → GEOB | L | **H** | H | H | H | cue non letti; writer Serato assente |
-| 19 | Engine → Traktor | nessun nativo | PerformanceData → CUE_V2 | L | **H** | H | H | H | cue non letti; NML writer ok |
-| 20 | Engine → VirtualDJ | parziale | PerformanceData → Poi | L | **H** | H | H | H | cue non letti; vdjWriter ok |
+> **Colonna "Stato CF oggi" aggiornata al 2026-07-18.** I reader di RB-DB, Serato ed Engine ora leggono i cue; il writer RB XML emette i loop. Restano assenti i **writer** Serato ed Engine.
 
-**Pattern chiave:**
-- **Cue = H** in tutte le coppie che leggono Rekordbox-DB (1-4), Serato (5-8,10,14,18) ed Engine (17-20): **3 dei 5 software non consegnano nemmeno un cue nel pivot**. Solo Traktor→\* e VirtualDJ→\* portano i cue (M).
-- **Grid, Gain, Rating = H quasi ovunque** — limite dell'UDM, non dei formati.
-- **Playlist = H per VirtualDJ-in-lettura** (nessun `.vdjfolder`).
+| 1 | RB → Serato | Serato "Import from Rekordbox" (serve RB XML manuale) | DjmdCue → GEOB Markers2 | L | **H** | H | H | H | DB-cue **letti**; writer Serato assente → via RB XML nativo |
+| 2 | RB → Traktor | nessun import nativo | DjmdCue → CUE_V2 | L | **H** | H | H | H | ✅ **Funziona**: DB-cue → CUE_V2 (loop, cap 8) |
+| 3 | RB → VirtualDJ | VDJ legge libreria RB (auto) | DjmdCue → Poi | M | **H** | H | H | H | DB-cue letti; writer VDJ ok ma **scarta le memory** |
+| 4 | RB → Engine | Engine importa RB con cue (auto) | DjmdCue → PerformanceData | M | **H** | H | H | H | DB-cue letti; writer Engine assente |
+| 5 | Serato → RB | RB XML da terzi | GEOB → POSITION_MARK | M | **H** | H | H | H | ✅ **Funziona**: GEOB → POSITION_MARK |
+| 6 | Serato → Traktor | nessun nativo | GEOB → CUE_V2 | M | **H** | H | H | H | ✅ **Funziona**: GEOB → CUE_V2 |
+| 7 | Serato → VirtualDJ | VDJ legge crate+GEOB (auto) | GEOB → Poi | M | **H** | H | H | H | ✅ **Funziona**: GEOB → Poi (hot) |
+| 8 | Serato → Engine | Engine importa Serato (auto) | GEOB → PerformanceData | M | **H** | H | H | H | GEOB letti; writer Engine assente |
+| 9 | Traktor → RB | nessun nativo | CUE_V2 → POSITION_MARK (loop inclusi) | L | M | H | H | H | ✅ **Funziona**; colori assenti (NML), grid sintetica |
+| 10 | Traktor → Serato | nessun nativo | CUE_V2 → GEOB | L | M | H | H | H | Reader NML ok; writer Serato assente |
+| 11 | Traktor → VirtualDJ | VDJ legge NML (auto) | CUE_V2 → Poi | L | M | H | H | H | **Entrambi ok**; smartlist perse, memory→VDJ scartate |
+| 12 | Traktor → Engine | Engine importa Traktor (auto) | CUE_V2 → PerformanceData | L | M | H | H | H | Writer Engine assente |
+| 13 | VirtualDJ → RB | nessun nativo | Poi → POSITION_MARK (automix/remix→memory) | H | M | H | H | H | reader importa POI (memory); .vdjfolder statici no |
+| 14 | VirtualDJ → Serato | nessun nativo | Poi → GEOB | H | M | H | H | H | writer Serato assente |
+| 15 | VirtualDJ → Traktor | nessun nativo | Poi → CUE_V2 | H | M | H | H | H | reader importa POI (memory); playlist statiche no |
+| 16 | VirtualDJ → Engine | parziale nativo | Poi → PerformanceData | H | M | H | H | H | writer Engine assente |
+| 17 | Engine → RB | Engine esporta RB XML | PerformanceData → POSITION_MARK | L | **H** | H | H | H | ✅ **Funziona**: cue letti → POSITION_MARK |
+| 18 | Engine → Serato | nessun nativo | PerformanceData → GEOB | L | **H** | H | H | H | cue letti; writer Serato assente |
+| 19 | Engine → Traktor | nessun nativo | PerformanceData → CUE_V2 | L | **H** | H | H | H | ✅ **Funziona**: cue letti → CUE_V2 |
+| 20 | Engine → VirtualDJ | parziale | PerformanceData → Poi | L | **H** | H | H | H | ✅ **Funziona**: cue letti → Poi |
+
+**Pattern chiave (aggiornato 2026-07-18):**
+- La colonna "Cue = H/M" indica la **criticità del formato**, non lo stato: **tutti e 5 i software ora consegnano i cue nel pivot in lettura** (RB-DB, Serato, Engine erano i tre che prima davano 0 cue). Il collo di bottiglia residuo è la **scrittura** verso Serato ed Engine (writer assenti).
+- **Grid, Gain, Rating**: gain/rating/track_color ora nello schema UDM v6; la **beatgrid reale** resta il limite (griglia sintetica).
+- **Playlist = H per VirtualDJ-in-lettura** (solo `.vdjfolder` statici; i filter-folder dinamici sono per natura non convertibili).
 
 **Canale nativo (sopra il cofano):**
 - **Rekordbox Collection XML** = lingua franca de-facto (Serato/Engine/VirtualDJ la ingeriscono), ma richiede export manuale e **cappa a 8 hot cue**.
@@ -579,10 +624,10 @@ Per ogni rotta, i **passaggi manuali** che l'utente farebbe oggi e come CrateFor
 | Rotta | Passaggi manuali oggi | Come CF li elimina |
 |---|---|---|
 | **RB → \*** | 1) Export "collection XML" a mano; 2) puntare il SW di destinazione; 3) rilocare i file; 4) accettare cap 8 + perdita loop/colori | Leggere `DjmdCue` dal master.db (bypassa l'export XML manuale), mappare direttamente al writer di destinazione **senza** cap XML e **senza** perdita loop |
-| **Serato → \*** | 1) far leggere i crate/GEOB al SW target (solo VDJ/Engine lo fanno); per RB/Traktor **impossibile** | Reader GEOB Markers2 nel sidecar → pivot → qualunque writer; abilita rotte oggi inesistenti (Serato→RB/Traktor) |
-| **Traktor → RB** | 1) nessun import nativo → di fatto impossibile senza tool | Già parziale; va **aggiunto l'export dei loop** (POSITION_MARK con End) |
-| **Traktor → VDJ** | 1) VDJ legge NML (auto) ma perde smartlist/loop-su-pad | CF preserva loop-su-pad (non forzare HOTCUE=-1) e converte SMARTLIST |
-| **VDJ → \*** | 1) nessun import nativo verso RB/Traktor/Serato | Estendere `mapPoi` (automix/remix) + parser `.vdjfolder` → oggi importa 0 cue e 0 playlist |
+| **Serato → \*** | 1) far leggere i crate/GEOB al SW target (solo VDJ/Engine lo fanno); per RB/Traktor **impossibile** | ✅ **FATTO**: reader GEOB Markers2 nel sidecar → pivot → writer RB/Traktor/VDJ; rotte prima inesistenti ora attive |
+| **Traktor → RB** | 1) nessun import nativo → di fatto impossibile senza tool | ✅ **FATTO**: loop esportati (`POSITION_MARK Type="4"` con End) |
+| **Traktor → VDJ** | 1) VDJ legge NML (auto) ma perde smartlist/loop-su-pad | Loop-su-pad ✅ preservato; SMARTLIST ancora da convertire; ⚠️ memory→VDJ scartate |
+| **VDJ → \*** | 1) nessun import nativo verso RB/Traktor/Serato | Reader ✅ importa automix/remix (memory); **da fare**: writer VDJ che non scarti le memory + parser `.vdjfolder` statici |
 | **Engine → \*** | 1) Engine esporta solo RB XML; per Serato/Traktor nulla | Decodifica blob `PerformanceData` (sample→ms con SR) → pivot → qualunque writer |
 | **\* → Serato** | scrittura cue **impossibile** senza toccare i tag ID3 a mano | Writer GEOB (Markers2 + Markers\_) su **copie** con backup obbligatorio |
 
@@ -594,25 +639,25 @@ Per ogni rotta, i **passaggi manuali** che l'utente farebbe oggi e come CrateFor
 
 **Feasibility:** A=alta (formato noto + lib presente), M=media, B=bassa (reverse engineering / blocco tecnico).
 
-| Ord. | Tool / funzione | Stato attuale | Problema risolto | Feas. | Rischi / note |
+**Feasibility:** A=alta (formato noto + lib presente), M=media, B=bassa (reverse engineering / blocco tecnico). **Colonna "Stato" aggiornata al 2026-07-18.**
+
+| Ord. | Tool / funzione | Stato (2026-07-18) | Problema risolto | Feas. | Rischi / note |
 |---|---|---|---|---|---|
-| **1** | **Reader `DjmdCue` in `cmd_ingest_masterdb`** | 0 cue letti dal DB | Elimina la perdita **totale e silenziosa** dei cue nell'import RB nativo | **A** | pyrekordbox li espone già; `Kind=0→memory`, `Kind≥1→hot`, `OutMsec≠-1→loop` |
-| **2** | **Emettere i loop nel writer RB XML** | writer esclude i loop | Loop non più persi in `Traktor/VDJ/Engine→RB` | **A** | `POSITION_MARK End=(position_ms+length_ms)/1000` |
-| **3** | **Off-by-one + non-contiguità `Kind` + slot 9-16** | non gestito | Lettere hot cue corrette; niente perdita slot 9-16 | **A** | ⚠️ **non** `index=Kind-1`: Kind è ordinale non-contiguo (4 riservato ai loop); pad = Kind-2 per Kind≥5 |
-| **4** | **Mappa indice-palette RB → RGB** | assente | Recupera i colori dei cue letti dal DB | **A/M** | tabella statica palette pad; distinta da `DjmdColor` (palette traccia) |
-| **5** | **Estendere UDM: gain, rating, track_color, beatgrid_anchor** | schema `cues` ok, `track` senza questi campi | Unica causa di perdita di gain/rating/color/fase in OGNI rotta | **M** | prerequisito abilitante; aggiungere colonne + reader/writer |
-| **6** | **VirtualDJ: mappare automix/remix + parser `.vdjfolder`** | scarta i non-cue; ignora le playlist | Librerie VDJ reali importano 0 cue e 0 playlist | **M** | `mapPoi` accetta automix/remix (→memory/label); parser FilterFolder/VirtualFolder + gerarchia `%%`/cartelle |
-| **7** | **Traktor: loop-su-pad + SMARTLIST + volume non-boot** | HOTCUE=-1 forzato; smartlist ignorate; path esterni errati | Round-trip Traktor senza perdere pad-loop, smart-list, `/Volumes/…` | **A** | non azzerare HOTCUE per i loop; leggere `SEARCH_EXPRESSION`; non droppare VOLUME |
-| **8** | **Reader+Writer Serato GEOB** (Markers2 + Markers\_) via mutagen | stub `available:false` | Sblocca Serato in entrambe le direzioni | **M** | scrivere **entrambi** i frame; **obbligo copie+backup** (muta i file audio) |
-| **9** | **Engine DJ: decodifica cue `PerformanceData` (read) + writer** | reader metadati+pl, `cue=[]`; writer assente | Abilita Engine come sorgente/destinazione completa | **M** | formato **reverse-engineered e verificato** (§2.5): `quickCues`=`[len BE]+zlib`, 8 slot, posizione in **sample double BE**, colore ARGB; `loops`=LE non compresso; convertire con la **SR per-traccia**; read-only su copie |
-| **10** | **Beatgrid reale via ANLZ (RB) / GRID (Traktor)** | grid sempre sintetica BPM-costante | Fase corretta su tracce a tempo variabile | **B** | ⚠️ non bloccata da PCO2 (parsabile) ma da **PQT2 `u1=0x02000002`** che dà `ConstError` su pyrekordbox 0.4.3; serve fix/parser custom |
-| **11** | **Write diretta cue nel master.db** (esperto) | solo `create_playlist` | Import verso RB senza XML manuale (no cap 8, no perdita loop) | **B** | alto rischio corruzione/lock; obbligo backup rotanti + copia; solo dopo #1-4 |
+| **1** | **Reader `DjmdCue` in `cmd_ingest_masterdb`** | ✅ **FATTO** (3376 cue reali) | Elimina la perdita **totale e silenziosa** dei cue nell'import RB nativo | **A** | `Kind=0→memory`, `Kind≥1→hot`, `OutMsec≠-1→loop` |
+| **2** | **Emettere i loop nel writer RB XML** | ✅ **FATTO** | Loop non più persi in `Traktor/VDJ/Engine→RB` | **A** | `POSITION_MARK Type="4" End=(position_ms+length_ms)/1000` |
+| **3** | **Off-by-one + non-contiguità `Kind`** | ✅ **FATTO** (`_rb_pad_index`) | Lettere hot cue corrette | **A** | slot 9-16 ancora persi via XML (cap 8); ok via writer DB diretto |
+| **4** | **Mappa indice-palette RB → RGB** | ⏳ aperto | Recupera i colori dei cue letti dal DB | **A/M** | tabella statica palette pad; distinta da `DjmdColor` (palette traccia) |
+| **5** | **Estendere UDM: gain, rating, track_color, beatgrid** | ✅ **FATTO** (schema v6) | Perdita di gain/rating/color/fase in OGNI rotta | **M** | reader/writer per-adapter da completare caso per caso |
+| **6** | **VirtualDJ: mappare automix/remix + parser `.vdjfolder`** | 🟡 **parziale** | reader importa automix/remix (memory); writer scarta memory; `.vdjfolder` statici no | **M** | **da fare:** writer che non scarti le memory; parser VirtualFolder statici; validare `Size` loop in battiti |
+| **7** | **Traktor: loop-su-pad + SMARTLIST + volume non-boot** | 🟡 **parziale** | loop-su-pad e volume ✅; SMARTLIST ancora solo segnalate | **A** | **da fare:** leggere `SEARCH_EXPRESSION`; figlio `<GRID>` nel marker beatgrid; UUID 32-hex |
+| **8** | **Reader+Writer Serato GEOB** (Markers2 + Markers\_) via mutagen | 🟡 **reader FATTO** (709 cue) | Sblocca Serato in lettura; scrittura da fare | **M** | **writer** ancora assente; **obbligo copie+backup** (muta i file audio) |
+| **9** | **Engine DJ: decodifica cue `PerformanceData` (read) + writer** | 🟡 **reader FATTO** (1200 cue) | Engine come sorgente completa; destinazione da fare | **M** | formato verificato (§2.5); **writer** ancora assente; SR per-traccia |
+| **10** | **Beatgrid reale via ANLZ (RB) / GRID (Traktor)** | ⏳ **bloccato** | Fase corretta su tracce a tempo variabile | **B** | bloccata da **PQT2 `u1=0x02000002`** → `ConstError` su pyrekordbox 0.4.3; serve parser custom |
+| **11** | **Write diretta cue nel master.db** (esperto) | ⏳ solo `create_playlist` | Import verso RB senza XML manuale (no cap 8) | **B** | alto rischio corruzione/lock; obbligo backup rotanti + copia |
 
-**Ordine consigliato:** **1 → 2 → 3/4 → 5 → 6 → 7 → 8 → 9 → 10 → 11.**
+**Prossimi passi consigliati:** **4 → 6 (writer memory + Size loop) → 7 (SMARTLIST + `<GRID>`) → 8/9 (writer Serato/Engine) → 10 → 11.**
 
-> **Bug confermato a costo minimo (vedi §2.5):** la mappa `ENGINE_KEY` in `src/adapters/engine/engineReader.ts` è **cromatica** (`0=C`), ma l'encoding reale di `Track.key` in Engine è **ordinato Camelot** (`0 = B major`) → la key risulta **errata su ogni brano Engine importato**. Fix immediato (Feasibility **A**): sostituire la tabella con la mappa Camelot verificata — `camelotNumber = (key>>1)+1`, pari=major, dispari=minor.
-
-**Razionale:** prima i fix a costo minimo che fermano perdite totali e silenziose sul percorso già funzionante (DjmdCue, loop, off-by-one/colori), poi l'estensione UDM (sblocco trasversale), poi le rifiniture VirtualDJ/Traktor (adapter già read/write), poi il grande sblocco Serato (nuovo modulo GEOB), infine Engine, la beatgrid reale e la scrittura diretta nel DB (rischio massimo).
+**Razionale:** i fix a costo minimo che fermavano le perdite silenziose (DjmdCue, loop, non-contiguità `Kind`, mappa key Engine, cue Serato/Engine) **sono stati implementati**. Restano: i colori RB-DB, il completamento dei writer VirtualDJ/Serato/Engine, le SMARTLIST, la beatgrid reale e la scrittura diretta nel DB (rischio massimo).
 
 ---
 
@@ -620,7 +665,7 @@ Per ogni rotta, i **passaggi manuali** che l'utente farebbe oggi e come CrateFor
 
 ### 8.1 Rischi tecnici
 
-- **Perdita silenziosa di TUTTI i cue** nell'import diretto da master.db (oggi): brani e playlist arrivano, i cue no. È il rischio più grave e invisibile all'utente.
+- ~~**Perdita silenziosa di TUTTI i cue** nell'import diretto da master.db~~ **RISOLTO (2026-07-18):** `cmd_ingest_masterdb` ora legge `DjmdCue` (3376 cue reali). Rischio residuo minore: **le memory cue vengono scartate dal writer VirtualDJ** senza avviso.
 - **Scrittura diretta nel master.db cifrato**: il DB è SQLCipher (chiave DB6). Scrivere cue/playlist mentre rekordbox è in esecuzione → rischio **lock/lettura incoerente/corruzione**. Mitigazione: lavorare su copia, avvisare se il software gira, obbligo backup rotanti.
 - **Mutazione dei tag ID3 (Serato)**: scrivere i GEOB significa riscrivere i **file audio reali** dell'utente. Un errore corrompe i tag. Obbligo: **copie + backup dei file**, mai in-place al primo colpo.
 - **Perdita slot 9-16** su RB7 con >8 hot cue via qualunque canale a 8.
@@ -632,7 +677,7 @@ Per ogni rotta, i **passaggi manuali** che l'utente farebbe oggi e come CrateFor
 ### 8.2 Avvertenze legali / di sicurezza
 
 - **Cifratura Rekordbox**: la chiave DB6 sblocca un DB cifrato dal vendor. L'uso deve restare limitato alla **libreria dell'utente stesso** sulla **sua** macchina, in sola lettura ove possibile. Non ridistribuire la chiave né il DB.
-- **Formati proprietari version-dipendenti** (Serato database V2, Engine PerformanceData, ANLZ PCO2/PQT2): una scrittura ingenua può corrompere una libreria; l'adapter Serato è **volutamente disattivato** per questo.
+- **Formati proprietari version-dipendenti** (Serato database V2, Engine PerformanceData, ANLZ PCO2/PQT2): una scrittura ingenua può corrompere una libreria; per questo la **scrittura** Serato/Engine è tuttora disattivata (la lettura è invece attiva e validata).
 - **Backup nativi ingannevoli**: il backup Serato copre solo il DB, non le cue. Non affidarvisi per proteggere le cue.
 
 ### 8.3 Principi operativi (non negoziabili)
@@ -656,12 +701,12 @@ Per ogni rotta, i **passaggi manuali** che l'utente farebbe oggi e come CrateFor
 - **Fix ad altissimo ROI a portata**: la Priorità #1 (leggere `DjmdCue`) è a bassa fatica e ferma la perdita più grave.
 - **Infrastruttura di sicurezza già scritta** (`incrementalBackup`), va solo agganciata.
 
-**CONTRO / limiti attuali:**
-- **3 dei 5 software non consegnano un solo cue nel pivot** oggi (RB-DB, Serato, Engine): l'utente può credere di aver migrato tutto e perdere silenziosamente hot cue, memory, loop.
-- **Gain, rating, track-color, beatgrid reale persi ovunque** finché l'UDM non viene esteso.
-- **Scrivere verso Serato muta i file audio**: rischio intrinseco che nessun pivot elimina — richiede disciplina di backup ferrea.
-- **Engine e beatgrid reale = reverse engineering** (blob packed, ANLZ PQT2 con `ConstError`): feasibility bassa, timeline incerta.
-- **Bug di portabilità confermati** (volume Traktor) producono path errati su drive esterni finché non corretti.
+**CONTRO / limiti attuali (aggiornato 2026-07-18):**
+- ~~3 dei 5 software non consegnano un solo cue~~ **RISOLTO in LETTURA**: RB-DB, Serato ed Engine ora leggono i cue. Il limite si è spostato sulla **scrittura**: writer Serato ed Engine assenti, e il writer VirtualDJ scarta le memory cue.
+- **Beatgrid reale persa ovunque** (griglia sintetica); gain/rating/track_color ora coperti dallo schema UDM v6.
+- **Scrivere verso Serato muterà i file audio**: rischio intrinseco che nessun pivot elimina — richiede disciplina di backup ferrea (writer ancora da fare).
+- **Writer Engine + beatgrid reale = reverse engineering** (blob packed, ANLZ PQT2 con `ConstError`): feasibility bassa, timeline incerta.
+- ~~Bug di portabilità confermati (volume Traktor)~~ **RISOLTI**; resta un edge-case per NML di altre macchine con volume di boot non montato.
 - **Alcune perdite sono strutturali** (memory→hot verso Serato/VDJ/Engine, colori da Traktor): il pivot le può solo gestire con policy esplicite, non annullarle.
 
-**Verdetto:** CrateForge ha l'architettura giusta e alcuni adapter già maturi (Traktor, VirtualDJ, RB-XML), ma oggi **perde silenziosamente i cue dalla maggior parte delle sorgenti**. La roadmap 1→11 trasforma un convertitore di metadati+playlist in un vero convertitore **cue-completo bidirezionale**, a patto di rispettare i principi di backup, sola-lettura sulle sorgenti e dry-run — perché il salto di valore (scrittura diretta nei DB cifrati e nei tag audio) è anche il salto di rischio.
+**Verdetto (2026-07-18):** CrateForge ha l'architettura giusta e adapter ormai maturi in **lettura per tutti e 5 i software**; **legge i cue da ogni sorgente** (RB-DB, Serato GEOB, Engine `PerformanceData`, Traktor, VirtualDJ). Il fronte aperto è la **scrittura cue-completa** verso Serato ed Engine (writer assenti) e le rifiniture VirtualDJ/Traktor. La roadmap residua (4, 6-11) completa un convertitore **cue-completo bidirezionale**, a patto di rispettare i principi di backup, sola-lettura sulle sorgenti e dry-run — perché il salto di valore (scrittura diretta nei DB cifrati e nei tag audio) è anche il salto di rischio.
