@@ -33,10 +33,35 @@ export function rekordboxDir(): string {
   return join(app.getPath('home'), 'Pioneer', 'rekordbox');
 }
 
+/**
+ * Percorsi candidati di options.json, in ordine di priorità.
+ *
+ * Rekordbox 6/7 NON tiene options.json accanto a master.db: sta in
+ * ~/Library/Application Support/Pioneer/rekordboxAgent/storage/options.json (mac)
+ * o %APPDATA%\Pioneer\rekordboxAgent\storage\options.json (win). La vecchia
+ * ipotesi (accanto a master.db) rendeva optionsJsonExists sempre false su rb6/7,
+ * spezzando il pre-puntamento del picker e la decifratura companion-file.
+ */
+function optionsJsonCandidates(): string[] {
+  const dir = rekordboxDir();
+  const out: string[] = [];
+  if (process.platform === 'darwin') {
+    out.push(
+      join(app.getPath('home'), 'Library', 'Application Support', 'Pioneer', 'rekordboxAgent', 'storage', 'options.json')
+    );
+  } else if (process.platform === 'win32') {
+    out.push(join(app.getPath('appData'), 'Pioneer', 'rekordboxAgent', 'storage', 'options.json'));
+  }
+  // Fallback: accanto a master.db (versioni più vecchie / layout non standard).
+  out.push(join(dir, 'options.json'));
+  return out;
+}
+
 export function rekordboxDefaultPaths(): RekordboxPaths {
   const dir = rekordboxDir();
   const masterDb = join(dir, 'master.db');
-  const optionsJson = join(dir, 'options.json');
+  const candidates = optionsJsonCandidates();
+  const optionsJson = candidates.find(existsSync) ?? candidates[candidates.length - 1];
   return {
     dir,
     masterDb,

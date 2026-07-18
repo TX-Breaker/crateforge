@@ -175,8 +175,22 @@ export function ingestCollectionXml(
     const tx = db.transaction(() => {
       db.exec(`DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE source='xml');
                DELETE FROM playlists WHERE source='xml';`);
-      for (const node of asArray(playlistsRoot)) {
-        walkPlaylistNode(db, node as Record<string, unknown>, null, trackIdBySourceId, result);
+      // In DJ_PLAYLISTS il nodo di primo livello è il contenitore tecnico ROOT
+      // (Type=0, Name="ROOT") — sia negli export di rekordbox sia in quelli
+      // scritti da noi. Va scavalcato iterando direttamente i suoi figli, altrimenti
+      // il round-trip aggiunge un folder "ROOT" fantasma (albero non idempotente,
+      // come per $ROOT in Traktor: nmlReader).
+      for (const top of asArray(playlistsRoot)) {
+        const n = top as Record<string, unknown>;
+        const isRoot = n['@_Type'] === '0' && n['@_Name'] === 'ROOT';
+        if (isRoot) {
+          let sort = 0;
+          for (const child of asArray(n.NODE)) {
+            walkPlaylistNode(db, child as Record<string, unknown>, null, trackIdBySourceId, result, sort++);
+          }
+        } else {
+          walkPlaylistNode(db, n, null, trackIdBySourceId, result);
+        }
       }
     });
     tx();

@@ -50,7 +50,10 @@ export function writeTraktorNml(
       PLAYTIME: t.duration_s !== null ? String(Math.round(t.duration_s)) : '',
       RELEASE_DATE: t.year !== null ? `${t.year}/1/1` : '',
       // KEY testuale per compatibilità/lettura umana.
-      KEY: t.musical_key ?? ''
+      KEY: t.musical_key ?? '',
+      // FILESIZE in KiB (come da formato NML): il reader la legge, quindi senza
+      // riscriverla si perdeva a ogni export/round-trip verso Traktor.
+      ...(t.filesize !== null ? { FILESIZE: String(Math.round(t.filesize / 1024)) } : {})
     });
     if (t.bpm !== null) {
       entry.ele('TEMPO', { BPM: t.bpm.toFixed(6), BPM_QUALITY: '100.000000' });
@@ -83,6 +86,17 @@ export function writeTraktorNml(
           START: c.position_ms.toFixed(3),
           LEN: '0.000000',
           HOTCUE: String(c.cue_index)
+        });
+      } else if (c.cue_type === 'hot') {
+        // Hot cue fuori dagli 8 pad Traktor (index >= 8, es. da VirtualDJ/Engine)
+        // o senza pad (index null): degradato a cue non mappato (HOTCUE=-1) per
+        // conservarne la posizione, invece di scartarlo in silenzio.
+        entry.ele('CUE_V2', {
+          NAME: c.label ?? 'Cue',
+          TYPE: '0',
+          START: c.position_ms.toFixed(3),
+          LEN: '0.000000',
+          HOTCUE: '-1'
         });
       } else if (c.cue_type === 'memory') {
         // Memory cue → cue non-hotcue (HOTCUE=-1): sopravvive al round-trip.

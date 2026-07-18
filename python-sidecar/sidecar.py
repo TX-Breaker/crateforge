@@ -1298,7 +1298,14 @@ def cmd_read_serato(args: argparse.Namespace) -> None:
                 return None
 
         for dp, _, fs in os.walk(root):
-            if "_Serato_" in dp or "/.Trash" in dp:
+            # Salta la cartella interna _Serato_ (indice/DB, niente audio) e i
+            # cestini, ma RELATIVAMENTE alla root: un controllo substring sul path
+            # assoluto azzerava l'intera scansione quando la root stessa era (o
+            # stava sotto) una cartella il cui path contiene "_Serato_" — es.
+            # quando l'utente seleziona proprio la cartella _Serato_, come indica
+            # la UI. In quel caso i cue GEOB nei file (709 reali) andavano persi.
+            reldp = os.path.relpath(dp, root)
+            if "_Serato_" in reldp.split(os.sep) or "/.Trash" in dp:
                 continue
             for f in fs:
                 if not f.lower().endswith(_SERATO_AUDIO_EXT):
@@ -1361,7 +1368,10 @@ def _read_serato_crates(serato_dir: str, udm: sqlite3.Connection) -> None:
     udm.execute("DELETE FROM playlists WHERE source='serato'")
     import glob as _g
 
-    for order, cf in enumerate(sorted(_g.glob(os.path.join(sub, "*.crate")))):
+    # Ricorsivo: Serato annida i crate in sottocartelle di raggruppamento
+    # (es. Subcrates/Serato Stems/Stems.crate), che un glob non-ricorsivo
+    # ("*.crate") non trovava → 0 playlist importate.
+    for order, cf in enumerate(sorted(_g.glob(os.path.join(sub, "**", "*.crate"), recursive=True))):
         name = os.path.splitext(os.path.basename(cf))[0].replace("%%", " / ")
         try:
             with open(cf, "rb") as f:
