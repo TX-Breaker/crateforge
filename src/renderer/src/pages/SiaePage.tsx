@@ -38,9 +38,11 @@ export function SiaePage() {
   };
 
   const doRead = async () => {
-    const dbPath = await window.crateforge.dialog.openFile([
-      { name: 'Rekordbox master.db', extensions: ['db'] }
-    ]);
+    const rb = await window.crateforge.rekordbox.defaultPaths();
+    const dbPath = await window.crateforge.dialog.openFile(
+      [{ name: 'Rekordbox master.db', extensions: ['db'] }],
+      rb.masterDbExists ? rb.masterDb : rb.dir
+    );
     if (!dbPath) return;
     setBusy(true);
     setMsg(null);

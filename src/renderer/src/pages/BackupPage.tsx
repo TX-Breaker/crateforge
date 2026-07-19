@@ -39,9 +39,23 @@ export function BackupPage() {
     const d = await window.crateforge.dialog.openDirectory();
     if (d) setter(d);
   };
-  const pickFile = async (setter: (v: string) => void, name: string, ext: string[]) => {
-    const f = await window.crateforge.dialog.openFile([{ name, extensions: ext }]);
+  const pickFile = async (
+    setter: (v: string) => void,
+    name: string,
+    ext: string[],
+    defaultPath?: string
+  ) => {
+    const f = await window.crateforge.dialog.openFile([{ name, extensions: ext }], defaultPath);
     if (f) setter(f);
+  };
+  // master.db / options.json: pre-punta la cartella Rekordbox dell'utente.
+  const pickMasterDb = async () => {
+    const rb = await window.crateforge.rekordbox.defaultPaths();
+    pickFile(setMasterDb, 'master.db', ['db'], rb.masterDbExists ? rb.masterDb : rb.dir);
+  };
+  const pickOptions = async () => {
+    const rb = await window.crateforge.rekordbox.defaultPaths();
+    pickFile(setOptionsJson, 'options.json', ['json'], rb.optionsJsonExists ? rb.optionsJson : rb.dir);
   };
 
   const doPlan = async () => {
@@ -109,12 +123,12 @@ export function BackupPage() {
           <PathField
             label={tp('fMasterDb')}
             value={masterDb}
-            onBrowse={() => pickFile(setMasterDb, 'master.db', ['db'])}
+            onBrowse={pickMasterDb}
           />
           <PathField
             label={tp('fOptions')}
             value={optionsJson}
-            onBrowse={() => pickFile(setOptionsJson, 'options.json', ['json'])}
+            onBrowse={pickOptions}
           />
           <Button onClick={doPlan} disabled={!musicDir || !backupDir || busy}>
             {tp('calc')}

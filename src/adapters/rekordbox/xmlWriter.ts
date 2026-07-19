@@ -45,31 +45,69 @@ export function writeRekordboxXml(
       Mix: t.version_label ?? '',
       Location: t.path ? pathToLocation(t.path) : ''
     });
-    // Beatgrid: senza un TEMPO Rekordbox importa il brano senza griglia. Non
-    // avendo i marker di griglia originali, ancoriamo una griglia a BPM
-    // costante dall'inizio (meglio di nessuna griglia; l'utente può correggerla).
-    if (t.bpm !== null && t.bpm > 0) {
+    // Beatgrid: senza un TEMPO Rekordbox importa il brano senza griglia. Se
+    // conosciamo il downbeat reale (beatgrid_anchor_ms, dalla sorgente), lo usiamo
+    // come Inizio; altrimenti ripieghiamo su una griglia a BPM costante da 0.
+    const gridBpm = t.beatgrid_bpm != null && t.beatgrid_bpm > 0 ? t.beatgrid_bpm : t.bpm;
+    if (gridBpm !== null && gridBpm > 0) {
+      const anchorS = t.beatgrid_anchor_ms != null ? t.beatgrid_anchor_ms / 1000 : 0;
       trackEle.ele('TEMPO', {
-        Inizio: '0.000',
-        Bpm: t.bpm.toFixed(2),
+        Inizio: anchorS.toFixed(3),
+        Bpm: gridBpm.toFixed(2),
         Metro: '4/4',
         Battito: '1'
       });
     }
     // Max 8 hot cue: il limite va applicato QUI, non lasciato all'import.
     const cues = getCuesForTrack(db, t.id);
-    let hotCues = 0;
+    // Num del pad hot (0-7) allocato SENZA collisioni tra hot cue e hot loop
+    // (in Rekordbox XML due POSITION_MARK con lo stesso Num sono invalidi e uno
+    // sovrascrive l'altro). Prova l'indice sorgente se libero e valido,
+    // altrimenti il primo slot libero; oltre gli 8 pad il cue viene scartato.
+    const usedHotNums = new Set<number>();
+    const allocHot = (idx: number | null): number | null => {
+      if (idx != null && idx >= 0 && idx < 8 && !usedHotNums.has(idx)) {
+        usedHotNums.add(idx);
+        return idx;
+      }
+      for (let n = 0; n < 8; n++) {
+        if (!usedHotNums.has(n)) {
+          usedHotNums.add(n);
+          return n;
+        }
+      }
+      return null;
+    };
     for (const c of cues) {
-      if (c.cue_type === 'hot') {
-        if (hotCues >= 8) continue;
+      if (c.cue_type === 'loop' && c.length_ms != null && c.length_ms > 0) {
+        // Loop → POSITION_MARK Type=4 con Start+End (roadmap §7.2: prima esclusi
+        // e quindi persi in ogni rotta *→Rekordbox). Loop su pad (cue_index
+        // valorizzato) = hot loop e consuma uno degli 8 slot; altrimenti memory
+        // loop (Num=-1).
+        let num = -1;
+        if (c.cue_index != null) {
+          const alloc = allocHot(c.cue_index);
+          if (alloc === null) continue; // 8 pad già pieni
+          num = alloc;
+        }
+        trackEle.ele('POSITION_MARK', {
+          Name: c.label ?? '',
+          Type: '4',
+          Start: (c.position_ms / 1000).toFixed(3),
+          End: ((c.position_ms + c.length_ms) / 1000).toFixed(3),
+          Num: String(num),
+          ...colorAttrs(c.color)
+        });
+      } else if (c.cue_type === 'hot') {
+        const num = allocHot(c.cue_index);
+        if (num === null) continue; // max 8 hot cue
         trackEle.ele('POSITION_MARK', {
           Name: c.label ?? '',
           Type: '0',
           Start: (c.position_ms / 1000).toFixed(3),
-          Num: String(c.cue_index ?? hotCues),
+          Num: String(num),
           ...colorAttrs(c.color)
         });
-        hotCues++;
       } else if (c.cue_type === 'memory') {
         trackEle.ele('POSITION_MARK', {
           Name: c.label ?? '',
@@ -78,7 +116,6 @@ export function writeRekordboxXml(
           Num: '-1'
         });
       }
-      // loop attivi: non passano dall'XML (§4) → esclusi consapevolmente
     }
     exportedIds.push(t.id);
     count++;

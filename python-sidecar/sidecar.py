@@ -49,7 +49,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Emissione eventi (throttling obbligatorio §2: mai un evento per traccia)
@@ -184,8 +184,11 @@ def open_udm(udm_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _utcnow() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+def _now_local() -> str:
+    """Timestamp in ora LOCALE per ingest_runs (started_at/finished_at), coerente
+    col Registro operazioni lato Node: mostrare UTC confondeva l'utente (orari
+    sfasati). Usato solo per la visualizzazione, non per confronti."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +216,7 @@ def cmd_ingest_masterdb(args: argparse.Namespace) -> None:
 
     run_id = udm.execute(
         "INSERT INTO ingest_runs (source, started_at, status) VALUES ('masterdb', ?, 'running')",
-        (_utcnow(),),
+        (_now_local(),),
     ).lastrowid
     udm.commit()
 
@@ -223,6 +226,18 @@ def cmd_ingest_masterdb(args: argparse.Namespace) -> None:
         contents = list(rb.get_content())
         total = len(contents)
         emit({"type": "log", "message": f"master.db aperto: {total} contenuti"})
+
+        # Cue: bulk-fetch e raggruppa per ContentID (roadmap §7.1: prima
+        # l'ingest master.db NON leggeva alcun cue — perdita totale e silenziosa).
+        cues_by_content: dict[str, list] = {}
+        try:
+            for cue in rb.get_cue().all():
+                cid = _get(cue, "ContentID")
+                if cid is not None:
+                    cues_by_content.setdefault(str(cid), []).append(cue)
+        except Exception as exc:
+            emit({"type": "log", "message": f"Cue non letti: {exc}"})
+        cue_count = 0
 
         # Transazioni brevi (§2): commit a blocchi di 500.
         for i, c in enumerate(contents):
@@ -234,11 +249,13 @@ def cmd_ingest_masterdb(args: argparse.Namespace) -> None:
                 INSERT INTO tracks (source, source_id, title, artist, album, genre,
                                     year, bpm, musical_key, camelot, duration_s, path,
                                     filesize, version_label, has_tag_issues,
-                                    needs_review, review_reason)
+                                    needs_review, review_reason, gain_db, rating,
+                                    track_color, beatgrid_bpm, beatgrid_anchor_ms)
                 VALUES ('masterdb', :source_id, :title, :artist, :album, :genre,
                         :year, :bpm, :musical_key, :camelot, :duration_s, :path,
                         :filesize, :version_label, :has_tag_issues,
-                        :needs_review, :review_reason)
+                        :needs_review, :review_reason, :gain_db, :rating,
+                        :track_color, :beatgrid_bpm, :beatgrid_anchor_ms)
                 ON CONFLICT(source, source_id) DO UPDATE SET
                     title=excluded.title, artist=excluded.artist,
                     album=excluded.album, genre=excluded.genre,
@@ -249,31 +266,56 @@ def cmd_ingest_masterdb(args: argparse.Namespace) -> None:
                     version_label=excluded.version_label,
                     has_tag_issues=excluded.has_tag_issues,
                     needs_review=excluded.needs_review,
-                    review_reason=excluded.review_reason
+                    review_reason=excluded.review_reason,
+                    gain_db=excluded.gain_db, rating=excluded.rating,
+                    track_color=excluded.track_color,
+                    beatgrid_bpm=excluded.beatgrid_bpm,
+                    beatgrid_anchor_ms=excluded.beatgrid_anchor_ms
                 """,
                 row,
             )
             inserted += 1
+
+            # Cue del brano appena inserito (rimpiazza i precedenti: idempotente).
+            trow = udm.execute(
+                "SELECT id FROM tracks WHERE source='masterdb' AND source_id=?",
+                (row["source_id"],),
+            ).fetchone()
+            if trow is not None:
+                tid = trow[0]
+                udm.execute("DELETE FROM cues WHERE track_id=?", (tid,))
+                for cue in cues_by_content.get(row["source_id"], []):
+                    cr = _rb_cue_row(cue)
+                    if cr is None:
+                        continue
+                    udm.execute(
+                        "INSERT INTO cues (track_id, cue_type, cue_index, position_ms,"
+                        " length_ms, color, label) VALUES (?,?,?,?,?,?,?)",
+                        (tid, cr[0], cr[1], cr[2], cr[3], cr[4], cr[5]),
+                    )
+                    cue_count += 1
+
             if inserted % 500 == 0:
                 udm.commit()
             progress.update(i + 1, total)
         udm.commit()
+        emit({"type": "log", "message": f"Cue importati: {cue_count}"})
 
         _ingest_playlists(rb, udm)
         udm.commit()
 
         udm.execute(
             "UPDATE ingest_runs SET finished_at=?, status='ok', track_count=? WHERE id=?",
-            (_utcnow(), inserted, run_id),
+            (_now_local(), inserted, run_id),
         )
         udm.commit()
         progress.finish(total, total)
-        emit({"type": "done", "data": {"tracks": inserted}})
+        emit({"type": "done", "data": {"tracks": inserted, "cues": cue_count}})
     except Exception as exc:
         udm.rollback()
         udm.execute(
             "UPDATE ingest_runs SET finished_at=?, status='error', error=? WHERE id=?",
-            (_utcnow(), str(exc), run_id),
+            (_now_local(), str(exc), run_id),
         )
         udm.commit()
         fail(f"Errore durante l'ingestion: {exc}")
@@ -291,6 +333,58 @@ def _get(obj, *names):
         if v is not None:
             return v
     return None
+
+
+# Palette colore-traccia Rekordbox (DjmdColor.Commnt → RGB), per track_color.
+_RB_TRACK_COLORS = {
+    "Pink": "#FF69B4", "Red": "#FF0000", "Orange": "#FFA500",
+    "Yellow": "#FFFF00", "Green": "#00CC00", "Aqua": "#00FFFF",
+    "Blue": "#0000FF", "Purple": "#9900CC",
+}
+
+# Palette hot-cue di default Rekordbox (best-effort, roadmap §7.4): la maggior
+# parte dei cue ha Color=-1 (nessun colore esplicito → la destinazione applica
+# il proprio default). Mappiamo solo gli indici piccoli noti; -1 e 255 → None.
+_RB_CUE_COLORS = {
+    1: "#FF69B4", 2: "#FF0000", 3: "#FFA500", 4: "#FFFF00",
+    5: "#00CC00", 6: "#00FFFF", 7: "#0000FF", 8: "#9900CC",
+}
+
+
+def _rb_cue_color(color):
+    if color is None or color < 0 or color == 255:
+        return None
+    return _RB_CUE_COLORS.get(int(color))
+
+
+def _rb_pad_index(kind):
+    """Slot pad 0-based dal Kind Rekordbox, che NON è contiguo (roadmap §7.3):
+    pad 1-3 = Kind 1,2,3; pad 4-8 = Kind 5,6,7,8,9 (Kind 4 riservato ai loop).
+    Kind>=10 = cue auto oltre gli 8 pad → nessuno slot."""
+    if kind is None or kind < 1:
+        return None
+    if kind <= 4:
+        return kind - 1  # 1,2,3 hot -> 0,1,2 ; 4 loop -> pad 4 (idx 3)
+    if kind <= 9:
+        return kind - 2  # 5..9 -> 3..7 (pad 4..8)
+    return None
+
+
+def _rb_cue_row(cue):
+    """Riga DjmdCue → tupla per la tabella cues dell'UDM (o None se non valida).
+    Tipo: OutMsec≠-1 → loop; Kind=0 o ≥10 → memory; altrimenti hot."""
+    inmsec = _get(cue, "InMsec")
+    if inmsec is None or inmsec < 0:
+        return None
+    outmsec = _get(cue, "OutMsec")
+    kind = _get(cue, "Kind") or 0
+    if outmsec is not None and outmsec != -1:
+        ctype, length, idx = "loop", float(outmsec - inmsec), _rb_pad_index(kind)
+    elif kind == 0 or kind >= 10:
+        ctype, length, idx = "memory", None, None
+    else:
+        ctype, length, idx = "hot", None, _rb_pad_index(kind)
+    return (ctype, idx, float(inmsec), length, _rb_cue_color(_get(cue, "Color")), _get(cue, "Comment"))
 
 
 def _content_to_track(c) -> dict | None:
@@ -313,6 +407,14 @@ def _content_to_track(c) -> dict | None:
     version = extract_version_label(title) or extract_version_label(
         os.path.basename(path) if path else None
     )
+    # Metadati di performance (roadmap §7.5).
+    color_name = _get(_get(c, "Color"), "Commnt", "Comment")
+    track_color = _RB_TRACK_COLORS.get(color_name) if color_name else None
+    rating_raw = _get(c, "Rating")
+    rating = None
+    if isinstance(rating_raw, (int, float)) and rating_raw > 0:
+        # Rekordbox usa 0/51/102/153/204/255 (stelle×51); normalizza a 0-100.
+        rating = round(rating_raw / 255 * 100) if rating_raw > 5 else round(rating_raw * 20)
     return {
         "source_id": str(source_id),
         "title": title,
@@ -330,6 +432,11 @@ def _content_to_track(c) -> dict | None:
         "has_tag_issues": 1 if missing_core else 0,
         "needs_review": 0,
         "review_reason": None,
+        "gain_db": None,
+        "rating": rating,
+        "track_color": track_color,
+        "beatgrid_bpm": None,
+        "beatgrid_anchor_ms": None,
     }
 
 
@@ -918,6 +1025,44 @@ def cmd_masterdb_create_playlist(args: argparse.Namespace) -> None:
 # download-key — fallback chiave Rekordbox (§4.3, Esperto, in-app)
 # ---------------------------------------------------------------------------
 
+def _key_cached() -> bool:
+    """True se la chiave di decrittazione Rekordbox è già in cache pyrekordbox.
+    La cache è un file di testo con la riga 'dp: 402fd…' (la chiave valida inizia
+    sempre con 402fd)."""
+    try:
+        from pyrekordbox.config import get_cache_file
+        cache = str(get_cache_file())
+        if not os.path.exists(cache):
+            return False
+        with open(cache, encoding="utf-8") as fh:
+            return "402fd" in fh.read()
+    except Exception:
+        return False
+
+
+def _download_and_cache_key() -> None:
+    """Scarica la chiave nota da fonti pubbliche del progetto e la salva in cache.
+    In pyrekordbox 0.4.x le funzioni sono `download_db6_key` (in
+    pyrekordbox.__main__) e `write_db6_key_cache` — con il '6': i vecchi nomi
+    `download_db_key`/`write_db_key_cache` NON esistono, per questo la feature
+    risultava "non esposta". download_db6_key scarica E scrive già la cache.
+    La funzione stampa su stdout ('Looking for key…'): la silenziamo per non
+    sporcare il protocollo JSON-per-riga verso Node."""
+    import contextlib
+    import io
+    try:
+        from pyrekordbox.__main__ import download_db6_key  # type: ignore
+    except ImportError:
+        try:
+            from pyrekordbox import download_db6_key  # type: ignore  # eventuale alias futuro
+        except ImportError:
+            raise RuntimeError(
+                "Questa versione di pyrekordbox non espone il download della chiave."
+            )
+    with contextlib.redirect_stdout(io.StringIO()):
+        download_db6_key()
+
+
 def cmd_download_key(args: argparse.Namespace) -> None:
     """Scarica la chiave di decrittazione nota del master.db tramite
     pyrekordbox (la recupera da fonti pubbliche del progetto). Nessun dato
@@ -925,22 +1070,360 @@ def cmd_download_key(args: argparse.Namespace) -> None:
     dove l'estrazione locale della chiave fallisce (Rekordbox >= 6.6.5).
     """
     try:
-        from pyrekordbox.config import write_db_key_cache  # type: ignore
-        from pyrekordbox import download_db_key  # type: ignore
-    except ImportError:
-        try:
-            # API alternativa nelle versioni recenti di pyrekordbox
-            from pyrekordbox.config import download_db_key, write_db_key_cache  # type: ignore
-        except ImportError:
-            fail("Questa versione di pyrekordbox non espone il download della chiave.")
-            return
-    try:
-        key = download_db_key()
-        write_db_key_cache(key)
+        _download_and_cache_key()
     except Exception as exc:
         fail(f"Download della chiave non riuscito: {str(exc)[:300]}")
         return
     emit({"type": "done", "data": {"keyCached": True}})
+
+
+# ---------------------------------------------------------------------------
+# Serato (roadmap §7.8) — libreria "database V2" + crate + cue nei tag GEOB.
+# I cue/loop Serato NON stanno nel database ma nei frame ID3 GEOB
+# "Serato Markers2" dei file audio (base64, layout binario documentato).
+# READER SPERIMENTALE: sola lettura, opt-in. Posizioni cue in MILLISECONDI.
+# Non validato su libreria reale (nessuna disponibile in sviluppo): il parser
+# GEOB è coperto da test sintetico.
+# ---------------------------------------------------------------------------
+
+
+def _serato_fields(data: bytes, offset: int = 0, end: int | None = None):
+    """Itera i campi Serato: tag ASCII 4 char + uint32 BE lunghezza + payload."""
+    if end is None:
+        end = len(data)
+    i = offset
+    while i + 8 <= end:
+        import struct as _s
+        tag = data[i : i + 4].decode("ascii", "replace")
+        ln = _s.unpack(">I", data[i + 4 : i + 8])[0]
+        yield tag, data[i + 8 : i + 8 + ln]
+        i += 8 + ln
+
+
+def _serato_text(payload: bytes) -> str | None:
+    try:
+        return payload.decode("utf-16-be").rstrip("\x00") or None
+    except Exception:
+        return None
+
+
+def parse_serato_markers2(geob_data: bytes):
+    """GEOB 'Serato Markers2' → lista tuple (type,index,posMs,lenMs,color,label).
+    Formato: 2 byte versione + base64 (con newline) del corpo; il corpo ha entry
+    [nome-tipo null-terminated][uint32 BE len][payload]. CUE e LOOP in ms."""
+    import base64
+    import struct as _s
+
+    try:
+        # 2 byte versione + base64 (newline ogni 72 char) + null di padding.
+        # La base64 va presa FINO al primo null e TRONCATA all'ultimo gruppo
+        # completo di 4: Serato lascia un gruppo parziale finale (verificato su
+        # file reali) che romperebbe il decode se lo si tenta di completare.
+        b64 = geob_data[2:].replace(b"\n", b"").split(b"\x00")[0]
+        b64 = b64[: len(b64) - (len(b64) % 4)]
+        body = base64.b64decode(b64)
+    except Exception:
+        return []
+    cues = []
+    i = 2  # salta 01 01 iniziale del corpo
+    n = len(body)
+    while i < n:
+        j = body.find(b"\x00", i)
+        if j < 0:
+            break
+        name = body[i:j].decode("ascii", "replace")
+        i = j + 1
+        if i + 4 > n:
+            break
+        ln = _s.unpack(">I", body[i : i + 4])[0]
+        i += 4
+        payload = body[i : i + ln]
+        i += ln
+        if name == "CUE" and len(payload) >= 12:
+            idx = payload[1]
+            pos = _s.unpack(">I", payload[2:6])[0]
+            rgb = payload[7:10]
+            label = payload[12:].split(b"\x00")[0].decode("utf-8", "replace") or None
+            color = "#%02X%02X%02X" % (rgb[0], rgb[1], rgb[2]) if len(rgb) == 3 else None
+            cues.append(("hot", idx, float(pos), None, color, label))
+        elif name == "LOOP" and len(payload) >= 20:
+            # Layout documentato: [0]=00,[1]=index,[2:6]=start,[6:10]=end,
+            # [10:14]=FFFFFFFF,[14]=00,[15:18]=color,[18]=00,[19]=locked,[20:]=name.
+            idx = payload[1]
+            start = _s.unpack(">I", payload[2:6])[0]
+            endp = _s.unpack(">I", payload[6:10])[0]
+            rgb = payload[15:18]
+            color = "#%02X%02X%02X" % (rgb[0], rgb[1], rgb[2]) if len(rgb) == 3 else None
+            label = payload[20:].split(b"\x00")[0].decode("utf-8", "replace") or None
+            cues.append(("loop", idx, float(start), float(endp - start), color, label))
+    return cues
+
+
+def _serato_volume_root(serato_dir: str) -> str:
+    """I path nei crate/db Serato sono relativi alla root del volume."""
+    m = re.match(r"^(/Volumes/[^/]+)/", serato_dir)
+    return m.group(1) if m else ""
+
+
+_SERATO_AUDIO_EXT = (".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a")
+
+
+def _serato_has_markers(tags) -> bool:
+    if not tags:
+        return False
+    for gk in tags.keys():
+        if str(gk).startswith("GEOB") and getattr(tags[gk], "desc", "") == "Serato Markers2":
+            return True
+    return False
+
+
+def _serato_import_one(udm, MutagenFile, abs_path, source_id, meta) -> int:
+    """Inserisce/aggiorna un brano Serato e ne legge i cue GEOB. Ritorna il
+    numero di cue importati. `meta['_tags']` (se presente) evita di riaprire il
+    file quando i tag sono già stati letti dallo scan."""
+    title, artist, key_name = meta.get("title"), meta.get("artist"), meta.get("key")
+    udm.execute(
+        """INSERT INTO tracks (source, source_id, title, artist, album, genre,
+               bpm, musical_key, camelot, path, has_tag_issues, needs_review)
+           VALUES ('serato', :sid, :title, :artist, :album, :genre, :bpm, :key,
+               :camelot, :path, :issue, 0)
+           ON CONFLICT(source, source_id) DO UPDATE SET
+               title=excluded.title, artist=excluded.artist, album=excluded.album,
+               genre=excluded.genre, bpm=excluded.bpm, musical_key=excluded.musical_key,
+               camelot=excluded.camelot, path=excluded.path""",
+        {
+            "sid": source_id, "title": title, "artist": artist,
+            "album": meta.get("album"), "genre": meta.get("genre"),
+            "bpm": meta.get("bpm"), "key": key_name, "camelot": to_camelot(key_name),
+            "path": abs_path, "issue": 1 if (not title or not artist) else 0,
+        },
+    )
+    trow = udm.execute(
+        "SELECT id FROM tracks WHERE source='serato' AND source_id=?", (source_id,)
+    ).fetchone()
+    if not trow:
+        return 0
+    tid = trow[0]
+    udm.execute("DELETE FROM cues WHERE track_id=?", (tid,))
+    n = 0
+    tags = meta.get("_tags")
+    if tags is None:
+        try:
+            tags = getattr(MutagenFile(abs_path), "tags", None)
+        except Exception:
+            tags = None
+    for gk in list(tags.keys()) if tags else []:
+        if not str(gk).startswith("GEOB"):
+            continue
+        fr = tags[gk]
+        if getattr(fr, "desc", "") == "Serato Markers2":
+            for c in parse_serato_markers2(bytes(fr.data)):
+                udm.execute(
+                    "INSERT INTO cues (track_id, cue_type, cue_index, position_ms,"
+                    " length_ms, color, label) VALUES (?,?,?,?,?,?,?)",
+                    (tid, c[0], c[1], c[2], c[3], c[4], c[5]),
+                )
+                n += 1
+    return n
+
+
+def cmd_read_serato(args: argparse.Namespace) -> None:
+    try:
+        from mutagen import File as MutagenFile
+    except ImportError:
+        fail("mutagen non installato nel sidecar: impossibile leggere i cue Serato.")
+        return
+    root = args.serato_dir
+    # Il percorso può essere una cartella _Serato_ (con 'database V2') OPPURE una
+    # cartella musica: i cue Serato stanno nei tag GEOB dei file, quindi oltre al
+    # database scansioniamo l'albero per i file taggati non ancora importati (i
+    # brani cue-ati non sempre sono nel database corrente).
+    serato_dir = None
+    if os.path.exists(os.path.join(root, "database V2")):
+        serato_dir = root
+    elif os.path.exists(os.path.join(root, "_Serato_", "database V2")):
+        serato_dir = os.path.join(root, "_Serato_")
+
+    udm = open_udm(args.udm_path)
+    run_id = udm.execute(
+        "INSERT INTO ingest_runs (source, started_at, status) VALUES ('serato', ?, 'running')",
+        (_now_local(),),
+    ).lastrowid
+    udm.commit()
+    progress = ThrottledProgress("read-serato")
+    tracks = 0
+    cue_count = 0
+    imported: set[str] = set()
+    try:
+        # 1) libreria dal database V2 (+ crate), se presente.
+        if serato_dir:
+            vol = _serato_volume_root(serato_dir)
+            with open(os.path.join(serato_dir, "database V2"), "rb") as f:
+                raw = f.read()
+            otrks = [p for t, p in _serato_fields(raw) if t == "otrk"]
+            for k, payload in enumerate(otrks):
+                fld = {t: p for t, p in _serato_fields(payload)}
+                rel = _serato_text(fld.get("pfil", b"")) if fld.get("pfil") else None
+                if not rel:
+                    continue
+                abs_path = (vol + "/" + rel) if not rel.startswith("/") else rel
+                bpm_txt = _serato_text(fld.get("tbpm", b""))
+                try:
+                    bpm = float(bpm_txt) if bpm_txt else None
+                except ValueError:
+                    bpm = None
+                cue_count += _serato_import_one(
+                    udm, MutagenFile, abs_path, rel,
+                    {
+                        "title": _serato_text(fld.get("tsng", b"")),
+                        "artist": _serato_text(fld.get("tart", b"")),
+                        "album": _serato_text(fld.get("talb", b"")),
+                        "genre": _serato_text(fld.get("tgen", b"")),
+                        "bpm": bpm, "key": _serato_text(fld.get("tkey", b"")),
+                    },
+                )
+                imported.add(abs_path)
+                tracks += 1
+                if tracks % 200 == 0:
+                    udm.commit()
+                progress.update(k + 1, len(otrks))
+            _read_serato_crates(serato_dir, udm)
+            udm.commit()
+
+        # 2) scan della cartella per i file con "Serato Markers2" non già letti.
+        def _txt(tags, key):
+            try:
+                return str(tags[key].text[0]) if key in tags else None
+            except Exception:
+                return None
+
+        for dp, _, fs in os.walk(root):
+            # Salta la cartella interna _Serato_ (indice/DB, niente audio) e i
+            # cestini, ma RELATIVAMENTE alla root: un controllo substring sul path
+            # assoluto azzerava l'intera scansione quando la root stessa era (o
+            # stava sotto) una cartella il cui path contiene "_Serato_" — es.
+            # quando l'utente seleziona proprio la cartella _Serato_, come indica
+            # la UI. In quel caso i cue GEOB nei file (709 reali) andavano persi.
+            reldp = os.path.relpath(dp, root)
+            if "_Serato_" in reldp.split(os.sep) or "/.Trash" in dp:
+                continue
+            for f in fs:
+                if not f.lower().endswith(_SERATO_AUDIO_EXT):
+                    continue
+                ap = os.path.join(dp, f)
+                if ap in imported:
+                    continue
+                try:
+                    tags = getattr(MutagenFile(ap), "tags", None)
+                except Exception:
+                    continue
+                if not _serato_has_markers(tags):
+                    continue
+                bpm = None
+                try:
+                    b = _txt(tags, "TBPM")
+                    bpm = float(b) if b else None
+                except Exception:
+                    bpm = None
+                cue_count += _serato_import_one(
+                    udm, MutagenFile, ap, ap,
+                    {
+                        "title": _txt(tags, "TIT2"), "artist": _txt(tags, "TPE1"),
+                        "album": _txt(tags, "TALB"), "genre": _txt(tags, "TCON"),
+                        "bpm": bpm, "key": _txt(tags, "TKEY"), "_tags": tags,
+                    },
+                )
+                imported.add(ap)
+                tracks += 1
+                if tracks % 100 == 0:
+                    udm.commit()
+                    progress.update(tracks, tracks + 1)
+
+        udm.commit()
+        udm.execute(
+            "UPDATE ingest_runs SET finished_at=?, status='ok', track_count=? WHERE id=?",
+            (_now_local(), tracks, run_id),
+        )
+        udm.commit()
+        progress.finish(tracks, tracks)
+        emit({"type": "done", "data": {"tracks": tracks, "cues": cue_count}})
+    except Exception as exc:
+        udm.rollback()
+        udm.execute(
+            "UPDATE ingest_runs SET finished_at=?, status='error', error=? WHERE id=?",
+            (_now_local(), str(exc), run_id),
+        )
+        udm.commit()
+        fail(f"Lettura Serato non riuscita: {str(exc)[:300]}")
+    finally:
+        udm.close()
+
+
+def _read_serato_crates(serato_dir: str, udm: sqlite3.Connection) -> None:
+    """Crate Serato (Subcrates/*.crate) → playlist. Best-effort."""
+    sub = os.path.join(serato_dir, "Subcrates")
+    if not os.path.isdir(sub):
+        return
+    udm.execute("DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE source='serato')")
+    udm.execute("DELETE FROM playlists WHERE source='serato'")
+    import glob as _g
+
+    # Ricorsivo: Serato annida i crate in sottocartelle di raggruppamento
+    # (es. Subcrates/Serato Stems/Stems.crate), che un glob non-ricorsivo
+    # ("*.crate") non trovava → 0 playlist importate.
+    for order, cf in enumerate(sorted(_g.glob(os.path.join(sub, "**", "*.crate"), recursive=True))):
+        name = os.path.splitext(os.path.basename(cf))[0].replace("%%", " / ")
+        try:
+            with open(cf, "rb") as f:
+                raw = f.read()
+        except Exception:
+            continue
+        rels = [
+            _serato_text(sp)
+            for t, p in _serato_fields(raw)
+            if t == "otrk"
+            for st, sp in _serato_fields(p)
+            if st == "ptrk"
+        ]
+        cur = udm.execute(
+            "INSERT INTO playlists (source, source_id, name, is_folder, sort_order)"
+            " VALUES ('serato', ?, ?, 0, ?)",
+            (cf, name, order),
+        )
+        pid = cur.lastrowid
+        pos = 0
+        for rel in rels:
+            if not rel:
+                continue
+            tr = udm.execute(
+                "SELECT id FROM tracks WHERE source='serato' AND source_id=?", (rel,)
+            ).fetchone()
+            if tr:
+                udm.execute(
+                    "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?,?,?)",
+                    (pid, tr[0], pos),
+                )
+                pos += 1
+
+
+def cmd_ensure_key(args: argparse.Namespace) -> None:
+    """Preflight all'avvio (auto): se la chiave di lettura non è in cache la
+    scarica, così la lettura diretta del master.db funziona out-of-the-box su un
+    Mac appena installato (Rekordbox >= 6.6.5). Idempotente e non distruttivo.
+    Esce SEMPRE con successo: lo stato reale è in data.keyReady, così Node
+    distingue "modulo rotto" (uscita !=0) da "chiave non ancora pronta"
+    (uscita 0, keyReady=false, es. offline al primo avvio)."""
+    if _key_cached():
+        emit({"type": "done", "data": {"keyReady": True, "downloaded": False}})
+        return
+    try:
+        _download_and_cache_key()
+        emit({"type": "done", "data": {"keyReady": _key_cached(), "downloaded": True}})
+    except Exception as exc:
+        emit({
+            "type": "done",
+            "data": {"keyReady": False, "downloaded": False, "error": str(exc)[:200]},
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -1037,6 +1520,15 @@ def main() -> None:
     p_dk = sub.add_parser("download-key")
     p_dk.add_argument("--udm-path", required=True)
 
+    # Preflight all'avvio: verifica/prepara la chiave senza intervento utente.
+    p_ek = sub.add_parser("ensure-key")
+    p_ek.add_argument("--udm-path", required=False)
+
+    # Serato (sperimentale): libreria database V2 + crate + cue GEOB.
+    p_ser = sub.add_parser("read-serato")
+    p_ser.add_argument("--udm-path", required=True)
+    p_ser.add_argument("--serato-dir", required=True)
+
     p_rh = sub.add_parser("read-history")
     p_rh.add_argument("--udm-path", required=True)
     p_rh.add_argument("--master-db", required=True)
@@ -1070,6 +1562,10 @@ def main() -> None:
         cmd_write_tags(args)
     elif args.command == "download-key":
         cmd_download_key(args)
+    elif args.command == "ensure-key":
+        cmd_ensure_key(args)
+    elif args.command == "read-serato":
+        cmd_read_serato(args)
     elif args.command == "read-history":
         cmd_read_history(args)
     elif args.command == "masterdb-create-playlist":

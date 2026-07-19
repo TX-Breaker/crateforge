@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Database, FileWarning, FolderOpen, Import, Music2, Shuffle } from 'lucide-react';
+import { BookOpen, Database, FileWarning, FolderOpen, Import, Music2, RefreshCw, Shuffle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/misc';
@@ -15,10 +15,28 @@ interface Stats {
   lastIngest?: { source: string; finished_at: string | null; status: string } | null;
 }
 
+interface RekordboxPaths {
+  dir: string;
+  masterDb: string;
+  masterDbExists: boolean;
+  optionsJson: string;
+  optionsJsonExists: boolean;
+}
+
+interface PreflightState {
+  checkedAt: string;
+  sidecar: { available: boolean; runs: boolean; binaryPath?: string; reason?: string };
+  key: { ready: boolean; downloaded: boolean; message?: string };
+  os: { platform: string; release: string; changed: boolean };
+  ok: boolean;
+}
+
 /**
  * Panoramica + import libreria. Due strade:
  *  1) lettura diretta master.db via sidecar (se disponibile);
  *  2) modalità solo-XML (sempre disponibile, pure-Node).
+ * Il master.db di Rekordbox viene rilevato automaticamente al percorso standard
+ * dell'utente, così la lettura diretta parte con un clic.
  */
 export function Dashboard() {
   const { locale } = useAppState();
@@ -28,6 +46,9 @@ export function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'info' | 'warn' | 'error'; text: string } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [rbPaths, setRbPaths] = useState<RekordboxPaths | null>(null);
+  const [preflight, setPreflight] = useState<PreflightState | null>(null);
+  const [pfBusy, setPfBusy] = useState(false);
 
   const refresh = async () => {
     setStats(await window.crateforge.library.stats());
@@ -36,7 +57,21 @@ export function Dashboard() {
   };
   useEffect(() => {
     refresh();
+    window.crateforge.rekordbox.defaultPaths().then(setRbPaths);
+    window.crateforge.preflight.get().then((s) => setPreflight((s as PreflightState) ?? null));
+    // Il preflight può finire dopo il mount (scarico chiave): resta in ascolto.
+    const off = window.crateforge.preflight.onUpdate((s) => setPreflight(s as PreflightState));
+    return off;
   }, []);
+
+  const rerunPreflight = async () => {
+    setPfBusy(true);
+    try {
+      setPreflight((await window.crateforge.preflight.rerun()) as PreflightState);
+    } finally {
+      setPfBusy(false);
+    }
+  };
 
   const importXml = async () => {
     const path = await window.crateforge.dialog.openFile([
@@ -91,10 +126,15 @@ export function Dashboard() {
     }
   };
 
-  const importMasterDb = async () => {
-    const dbPath = await window.crateforge.dialog.openFile([
-      { name: 'Database Rekordbox', extensions: ['db'] }
-    ]);
+  // explicitPath: percorso già noto (master.db rilevato) → nessun dialog.
+  // Altrimenti apre il picker pre-puntato sulla cartella Rekordbox dell'utente.
+  const importMasterDb = async (explicitPath?: string) => {
+    const dbPath =
+      explicitPath ??
+      (await window.crateforge.dialog.openFile(
+        [{ name: 'Database Rekordbox', extensions: ['db'] }],
+        rbPaths?.masterDbExists ? rbPaths.masterDb : rbPaths?.dir
+      ));
     if (!dbPath) return;
     setBusy(true);
     setMessage(null);
@@ -114,6 +154,8 @@ export function Dashboard() {
     }
   };
 
+  const masterDetected = !!rbPaths?.masterDbExists;
+
   return (
     <div className="space-y-6">
       <div>
@@ -126,6 +168,13 @@ export function Dashboard() {
         <StatCard icon={<FolderOpen />} label={tp('statPlaylists')} value={stats?.playlists ?? '—'} />
         <StatCard icon={<FileWarning />} label={tp('statReview')} value={stats?.needsReview ?? '—'} />
       </div>
+
+      <PreflightBanner
+        pf={preflight}
+        busy={pfBusy}
+        onRetry={rerunPreflight}
+        t={(k) => tp(k)}
+      />
 
       {sidecarOk === false && (
         <Alert variant="warning">
@@ -150,13 +199,30 @@ export function Dashboard() {
             <Button onClick={importXml} disabled={busy}>
               <Import /> {tp('importXmlBtn')}
             </Button>
-            <Button onClick={importMasterDb} disabled={busy || sidecarOk === false} variant="secondary">
-              <Database /> {tp('importDbBtn')}
+            <Button
+              onClick={() => importMasterDb(masterDetected ? rbPaths!.masterDb : undefined)}
+              disabled={busy || sidecarOk === false}
+              variant="secondary"
+            >
+              <Database /> {masterDetected ? tp('importDbDetected') : tp('importDbBtn')}
             </Button>
             <Button variant="ghost" onClick={() => setGuideOpen(true)}>
               <BookOpen /> {pageText(locale, 'guide', 'openExport')}
             </Button>
           </div>
+          {masterDetected && (
+            <p className="text-xs text-muted-foreground">
+              {tp('masterDetectedAt', { path: rbPaths!.masterDb })}{' '}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                onClick={() => importMasterDb()}
+                disabled={busy || sidecarOk === false}
+              >
+                {tp('chooseOtherDb')}
+              </button>
+            </p>
+          )}
           <JobProgressBar active={busy} />
           {message && (
             <Alert variant={message.kind === 'error' ? 'destructive' : message.kind === 'warn' ? 'warning' : 'default'}>
@@ -196,6 +262,49 @@ export function Dashboard() {
 
       <GuideDialog kind="exportXml" open={guideOpen} onOpenChange={setGuideOpen} />
     </div>
+  );
+}
+
+/**
+ * Banner del preflight: appare solo se qualcosa NON è pronto (modulo di lettura
+ * non avviabile, o chiave del master.db non ancora scaricata). Ad app in ordine
+ * non mostra nulla, per non fare rumore.
+ */
+function PreflightBanner({
+  pf,
+  busy,
+  onRetry,
+  t
+}: {
+  pf: PreflightState | null;
+  busy: boolean;
+  onRetry: () => void;
+  t: (k: string) => string;
+}) {
+  if (!pf || pf.ok) return null;
+  // Sidecar assente è già coperto dall'alert "solo-XML": qui evitiamo doppioni.
+  if (!pf.sidecar.available) return null;
+
+  const sidecarBroken = pf.sidecar.available && !pf.sidecar.runs;
+  const keyMissing = pf.sidecar.runs && !pf.key.ready;
+
+  return (
+    <Alert variant={sidecarBroken ? 'destructive' : 'warning'}>
+      <FileWarning className="h-4 w-4" />
+      <AlertTitle>{t('pfTitle')}</AlertTitle>
+      <AlertDescription className="space-y-2">
+        {sidecarBroken && <p>{pf.os.changed ? t('pfSidecarOsChanged') : t('pfSidecarBroken')}</p>}
+        {keyMissing && (
+          <p>
+            {t('pfKeyMissing')}
+            {pf.key.message ? ` (${pf.key.message})` : ''}
+          </p>
+        )}
+        <Button variant="outline" size="sm" onClick={onRetry} disabled={busy}>
+          <RefreshCw /> {t('pfRetry')}
+        </Button>
+      </AlertDescription>
+    </Alert>
   );
 }
 

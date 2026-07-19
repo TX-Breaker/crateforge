@@ -51,12 +51,14 @@ describe('writeRekordboxXml', () => {
     const tracks = doc.DJ_PLAYLISTS.COLLECTION.TRACK as Record<string, unknown>[];
     const levels = tracks.find((t) => (t['@_Name'] as string).startsWith('Levels'))!;
     const marks = levels.POSITION_MARK as Record<string, string>[];
-    const hot = marks.filter((m) => Number(m['@_Num']) >= 0);
-    const memory = marks.filter((m) => m['@_Num'] === '-1');
+    const hot = marks.filter((m) => m['@_Type'] === '0' && Number(m['@_Num']) >= 0);
+    const memory = marks.filter((m) => m['@_Type'] === '0' && m['@_Num'] === '-1');
+    const loops = marks.filter((m) => m['@_Type'] === '4');
     expect(hot).toHaveLength(8); // dalle 10 in ingresso
     expect(memory).toHaveLength(1);
-    // loop attivi esclusi consapevolmente: nessun mark con End
-    expect(marks.every((m) => m['@_End'] === undefined)).toBe(true);
+    // Loop ora esportati (roadmap §7.2): POSITION_MARK Type=4 con Start+End.
+    expect(loops).toHaveLength(1);
+    expect(loops[0]['@_End']).toBe('72.000');
   });
 
   it('scrive Location come file URL', () => {

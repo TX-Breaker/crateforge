@@ -46,6 +46,11 @@ export interface TrackRow {
   review_reason: string | null;
   acoustic_id: string | null;
   created_at: string;
+  gain_db: number | null;
+  rating: number | null;
+  track_color: string | null;
+  beatgrid_bpm: number | null;
+  beatgrid_anchor_ms: number | null;
 }
 
 export interface PageQuery {
@@ -113,8 +118,13 @@ export function logOperation(
   outcome: 'ok' | 'error' | 'dry-run' | 'skipped',
   detail?: string
 ): void {
+  // Timestamp in ora LOCALE: il DEFAULT dello schema è datetime('now') = UTC,
+  // che mostrava orari sfasati nel Registro operazioni (es. 19:16 invece di
+  // 21:16 in Italia). Scriviamo esplicitamente l'ora locale così display ed
+  // export sono coerenti col fuso dell'utente.
   db.prepare(
-    `INSERT INTO oplog (operation, target, outcome, detail) VALUES (?, ?, ?, ?)`
+    `INSERT INTO oplog (ts, operation, target, outcome, detail)
+     VALUES (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'), ?, ?, ?, ?)`
   ).run(operation, target, outcome, detail ?? null);
 }
 

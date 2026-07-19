@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import { join } from 'path';
 import { openUdm } from '@core/udm';
 import { registerIpc } from './ipc';
+import { runPreflight } from './preflight';
 
 /**
  * Processo main di CrateForge.
@@ -84,6 +85,19 @@ if (!app.requestSingleInstanceLock()) {
     }
     const disposeIpc = registerIpc(db, udmPath);
     createWindow();
+
+    // Preflight all'avvio, non bloccante: verifica che il sidecar sia
+    // eseguibile e che la chiave di lettura del master.db sia pronta (la
+    // scarica se manca). Così su un computer appena installato tutto funziona
+    // senza passaggi manuali. L'esito viene inviato al renderer quando pronto
+    // (che comunque lo rilegge con preflight:get al mount).
+    runPreflight(db, udmPath)
+      .then((state) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send('preflight:update', state);
+      })
+      .catch((err) => {
+        console.error('Preflight fallito:', err);
+      });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

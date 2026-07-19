@@ -29,7 +29,9 @@ const api = {
     ingestMasterdb: (dbPath: string, optionsPath?: string) =>
       ipcRenderer.invoke('library:ingestMasterdb', dbPath, optionsPath),
     importForeign: (kind: 'traktor' | 'virtualdj' | 'engine', path: string) =>
-      ipcRenderer.invoke('library:importForeign', kind, path)
+      ipcRenderer.invoke('library:importForeign', kind, path),
+    // Serato (sperimentale): riceve la cartella "_Serato_".
+    importSerato: (seratoDir: string) => ipcRenderer.invoke('library:importSerato', seratoDir)
   },
   backup: {
     plan: (opts: unknown) => ipcRenderer.invoke('backup:plan', opts),
@@ -139,11 +141,36 @@ const api = {
       ipcRenderer.invoke('masterdb:createPlaylist', trackIds, playlistName, masterDbPath, optionsJsonPath)
   },
   dialog: {
-    openFile: (filters?: { name: string; extensions: string[] }[]) =>
-      ipcRenderer.invoke('dialog:openFile', filters),
+    // defaultPath (opzionale) pre-punta il dialog su un file/cartella: usato per
+    // aprire di default il master.db di Rekordbox dell'utente.
+    openFile: (filters?: { name: string; extensions: string[] }[], defaultPath?: string) =>
+      ipcRenderer.invoke('dialog:openFile', filters, defaultPath),
     openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
     saveFile: (defaultName: string, filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:saveFile', defaultName, filters)
+  },
+  // Percorsi di default dell'installazione Rekordbox dell'utente corrente.
+  rekordbox: {
+    defaultPaths: () =>
+      ipcRenderer.invoke('rekordbox:defaultPaths') as Promise<{
+        dir: string;
+        masterDb: string;
+        masterDbExists: boolean;
+        optionsJson: string;
+        optionsJsonExists: boolean;
+      }>
+  },
+  // Preflight all'avvio: sidecar eseguibile + chiave di lettura pronta.
+  preflight: {
+    get: () => ipcRenderer.invoke('preflight:get'),
+    rerun: () => ipcRenderer.invoke('preflight:rerun'),
+    onUpdate: (cb: (state: unknown) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, state: unknown) => cb(state);
+      ipcRenderer.on('preflight:update', listener);
+      return () => {
+        ipcRenderer.removeListener('preflight:update', listener);
+      };
+    }
   },
   jobs: {
     cancel: () => ipcRenderer.invoke('job:cancel'),

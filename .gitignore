@@ -15,3 +15,7 @@ tests/fixtures/master.db
 *.tsbuildinfo
 .ai_state.md
 .DS_Store
+
+# Python bytecode
+__pycache__/
+python-sidecar/__pycache__/

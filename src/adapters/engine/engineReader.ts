@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { dirname, join, resolve } from 'path';
-import type { ForeignLibrary, NormPlaylist, NormTrack } from '@core/foreignImport';
+import { inflateSync } from 'zlib';
+import type { ForeignLibrary, NormCue, NormPlaylist, NormTrack } from '@core/foreignImport';
 
 /**
  * Reader Engine DJ (Denon / Engine Prime / Engine OS).
@@ -13,13 +14,109 @@ import type { ForeignLibrary, NormPlaylist, NormTrack } from '@core/foreignImpor
  * Percorso tipico del db: "<drive>/Engine Library/Database2/m.db".
  */
 
-// Engine memorizza la key come intero 0..23 (0=C … 11=B maggiori, 12..23 minori).
+// Engine memorizza la key come intero 0..23, ma NON è cromatico: è ordinato
+// CAMELOT (verificato su 400 file reali, vedi docs/INTEROPERABILITA-DJ.md §2.5).
+// Regola: camelot = (key>>1)+1; pari = major (lato B), dispari = minor (lato A).
+// 0 = B major (1B), non C. La vecchia mappa cromatica dava la key SBAGLIATA su
+// ogni brano Engine. Qui usiamo direttamente il nome nota corretto; toCamelot
+// (in importForeignLibrary) ne ricava la notazione Camelot.
 const ENGINE_KEY: Record<number, string> = {
-  0: 'C', 1: 'C#', 2: 'D', 3: 'D#', 4: 'E', 5: 'F', 6: 'F#', 7: 'G',
-  8: 'G#', 9: 'A', 10: 'A#', 11: 'B',
-  12: 'Cm', 13: 'C#m', 14: 'Dm', 15: 'D#m', 16: 'Em', 17: 'Fm',
-  18: 'F#m', 19: 'Gm', 20: 'G#m', 21: 'Am', 22: 'A#m', 23: 'Bm'
+  0: 'B', 1: 'G#m', 2: 'F#', 3: 'D#m', 4: 'C#', 5: 'A#m',
+  6: 'G#', 7: 'Fm', 8: 'D#', 9: 'Cm', 10: 'A#', 11: 'Gm',
+  12: 'F', 13: 'Dm', 14: 'C', 15: 'Am', 16: 'G', 17: 'Em',
+  18: 'D', 19: 'Bm', 20: 'A', 21: 'F#m', 22: 'E', 23: 'C#m'
 };
+
+/** Blob Engine con framing [uint32 BE lunghezza][stream zlib] → payload grezzo. */
+function decodeFramedZlib(blob: unknown): Buffer | null {
+  if (!Buffer.isBuffer(blob) || blob.length < 6) return null;
+  try {
+    return inflateSync(blob.subarray(4));
+  } catch {
+    return null;
+  }
+}
+
+/** 4 byte ARGB Engine (byte0 = alpha/enabled) → "#RRGGBB", o null se slot vuoto. */
+function argbToHex(buf: Buffer, off: number): string | null {
+  if (off + 4 > buf.length || buf[off] === 0) return null;
+  const hex = (n: number) => n.toString(16).padStart(2, '0');
+  return ('#' + hex(buf[off + 1]) + hex(buf[off + 2]) + hex(buf[off + 3])).toUpperCase();
+}
+
+/** Sample rate per-traccia (double BE @0 di trackData); 44100 come fallback. */
+function sampleRateOf(trackData: unknown): number {
+  const td = decodeFramedZlib(trackData);
+  if (td && td.length >= 8) {
+    const sr = td.readDoubleBE(0);
+    if (sr >= 8000 && sr <= 192000) return sr;
+  }
+  return 44100;
+}
+
+// NOTA beatgrid Engine: il blob `beatData` (framed zlib, header BE) contiene i
+// marker della griglia, ma il layout dei marker è complesso e version-dipendente
+// e non è ancora reverse-engineered in modo affidabile (il primo marker NON è un
+// semplice double sample-offset). Per non rischiare un downbeat errato, l'anchor
+// Engine NON viene estratto: i writer ripiegano su griglia a BPM costante da 0.
+// Follow-up: parser dedicato di `beatData` validato su dati reali.
+
+/**
+ * Decodifica i cue Engine dai blob PerformanceData (roadmap §7.9, prima persi).
+ * Hot cue in `quickCues` (framed zlib, header int64 BE, posizioni in SAMPLE
+ * double BE, colore ARGB). Loop in `loops` (NON compresso, little-endian).
+ * Le posizioni sample si convertono in ms con la sample rate del brano.
+ */
+function readEngineCues(quickCues: unknown, loops: unknown, sampleRate: number): NormCue[] {
+  const out: NormCue[] = [];
+  const toMs = (samples: number) => (samples / sampleRate) * 1000;
+
+  const qc = decodeFramedZlib(quickCues);
+  if (qc && qc.length >= 8) {
+    let off = 8; // salta l'header int64 BE (numero slot, tipicamente 8)
+    const count = Number(qc.readBigInt64BE(0));
+    for (let i = 0; i < count; i++) {
+      if (off + 1 > qc.length) break;
+      const len = qc.readUInt8(off);
+      off += 1;
+      const label = len ? qc.subarray(off, off + len).toString('utf8') : null;
+      off += len;
+      if (off + 12 > qc.length) break;
+      const pos = qc.readDoubleBE(off);
+      off += 8;
+      const color = argbToHex(qc, off);
+      off += 4;
+      if (pos >= 0) out.push({ type: 'hot', index: i, positionMs: toMs(pos), lengthMs: null, color, label });
+    }
+  }
+
+  if (Buffer.isBuffer(loops) && loops.length >= 8) {
+    let off = 8;
+    const count = Number(loops.readBigInt64LE(0));
+    for (let i = 0; i < count; i++) {
+      if (off + 1 > loops.length) break;
+      const len = loops.readUInt8(off);
+      off += 1;
+      const label = len ? loops.subarray(off, off + len).toString('utf8') : null;
+      off += len;
+      if (off + 22 > loops.length) break;
+      const start = loops.readDoubleLE(off);
+      off += 8;
+      const end = loops.readDoubleLE(off);
+      off += 8;
+      const isStart = loops.readUInt8(off);
+      off += 1;
+      const isEnd = loops.readUInt8(off);
+      off += 1;
+      const color = argbToHex(loops, off);
+      off += 4;
+      if (isStart && isEnd && end > start) {
+        out.push({ type: 'loop', index: i, positionMs: toMs(start), lengthMs: toMs(end - start), color, label });
+      }
+    }
+  }
+  return out;
+}
 
 function columnsOf(db: Database.Database, table: string): Set<string> {
   try {
@@ -62,7 +159,8 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
       length: pick(cols, 'length', 'lengthCalculated'),
       path: pick(cols, 'path', 'filename'),
       filename: pick(cols, 'filename'),
-      filesize: pick(cols, 'fileBytes', 'size')
+      filesize: pick(cols, 'fileBytes', 'size'),
+      rating: pick(cols, 'rating')
     };
 
     const sel = [
@@ -76,11 +174,38 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
       c.key ? `${c.key} AS keyval` : `NULL AS keyval`,
       c.length ? `${c.length} AS length` : `NULL AS length`,
       c.path ? `${c.path} AS path` : `NULL AS path`,
-      c.filesize ? `${c.filesize} AS filesize` : `NULL AS filesize`
+      c.filesize ? `${c.filesize} AS filesize` : `NULL AS filesize`,
+      c.rating ? `${c.rating} AS rating` : `NULL AS rating`
     ].join(', ');
 
     const rows = db.prepare(`SELECT ${sel} FROM Track`).all() as Record<string, unknown>[];
     const libRoot = resolve(dirname(dbPath), '..', '..'); // …/Engine Library/Database2/m.db → drive root
+
+    // Cue/loop dai blob PerformanceData (roadmap §7.9): indicizzati per trackId.
+    const perfByTrack = new Map<string, { quickCues: unknown; loops: unknown; trackData: unknown }>();
+    if (tableExists(db, 'PerformanceData')) {
+      const pcols = columnsOf(db, 'PerformanceData');
+      const idCol = pick(pcols, 'trackId', 'id') ?? 'trackId';
+      const qcCol = pick(pcols, 'quickCues');
+      const loopCol = pick(pcols, 'loops');
+      const tdCol = pick(pcols, 'trackData');
+      if (qcCol || loopCol) {
+        const psel = [
+          `${idCol} AS tid`,
+          qcCol ? `${qcCol} AS quickCues` : `NULL AS quickCues`,
+          loopCol ? `${loopCol} AS loops` : `NULL AS loops`,
+          tdCol ? `${tdCol} AS trackData` : `NULL AS trackData`
+        ].join(', ');
+        const prows = db.prepare(`SELECT ${psel} FROM PerformanceData`).all() as Record<string, unknown>[];
+        for (const pr of prows) {
+          perfByTrack.set(String(pr.tid), {
+            quickCues: pr.quickCues,
+            loops: pr.loops,
+            trackData: pr.trackData
+          });
+        }
+      }
+    }
 
     const tracks: NormTrack[] = rows.map((r) => {
       const rawPath = r.path != null ? String(r.path) : null;
@@ -93,6 +218,9 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
       const keyval = r.keyval != null ? Number(r.keyval) : NaN;
       const musicalKey = Number.isInteger(keyval) && ENGINE_KEY[keyval] ? ENGINE_KEY[keyval] : null;
       const bpm = r.bpm != null ? Number(r.bpm) || null : null;
+      const perf = perfByTrack.get(String(r.id));
+      const cues = perf ? readEngineCues(perf.quickCues, perf.loops, sampleRateOf(perf.trackData)) : [];
+      const rating = r.rating != null ? Number(r.rating) : null;
       return {
         sourceId: String(r.id),
         title: r.title != null ? String(r.title) : null,
@@ -105,7 +233,8 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
         durationS: r.length != null ? Number(r.length) || null : null,
         path,
         filesize: r.filesize != null ? Number(r.filesize) || null : null,
-        cues: []
+        cues,
+        rating: rating != null && !Number.isNaN(rating) ? rating : null
       };
     });
 
@@ -162,7 +291,10 @@ export function readEngineLibrary(dbPath: string): ForeignLibrary {
       }
     }
 
-    warnings.push('Engine DJ: cue e loop (blob PerformanceData) non ancora importati; importati brani, BPM, key e playlist.');
+    const cueTotal = tracks.reduce((s, t) => s + t.cues.length, 0);
+    warnings.push(
+      `Engine DJ: importati brani, BPM, key (ordinamento Camelot), rating, playlist e ${cueTotal} cue/loop dai blob PerformanceData.`
+    );
     if (tracks.length === 0) warnings.push('Nessun brano trovato nel database Engine.');
     return { source: 'engine', tracks, playlists, warnings };
   } finally {

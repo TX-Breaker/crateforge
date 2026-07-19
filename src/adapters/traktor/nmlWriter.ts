@@ -1,5 +1,5 @@
 import { create } from 'xmlbuilder2';
-import { writeFileSync } from 'fs';
+import { readdirSync, realpathSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import type BetterSqlite3 from 'better-sqlite3';
 import {
@@ -42,14 +42,18 @@ export function writeTraktorNml(
       TITLE: t.title ?? '',
       ARTIST: t.artist ?? ''
     });
-    entry.ele('LOCATION', { DIR: dir, FILE: file, VOLUME: volume });
+    // VOLUMEID = VOLUME: Traktor lo usa per identificare il drive (bug B1).
+    entry.ele('LOCATION', { DIR: dir, FILE: file, VOLUME: volume, VOLUMEID: volume });
     entry.ele('ALBUM', { TITLE: t.album ?? '' });
     entry.ele('INFO', {
       GENRE: t.genre ?? '',
       PLAYTIME: t.duration_s !== null ? String(Math.round(t.duration_s)) : '',
       RELEASE_DATE: t.year !== null ? `${t.year}/1/1` : '',
       // KEY testuale per compatibilità/lettura umana.
-      KEY: t.musical_key ?? ''
+      KEY: t.musical_key ?? '',
+      // FILESIZE in KiB (come da formato NML): il reader la legge, quindi senza
+      // riscriverla si perdeva a ogni export/round-trip verso Traktor.
+      ...(t.filesize !== null ? { FILESIZE: String(Math.round(t.filesize / 1024)) } : {})
     });
     if (t.bpm !== null) {
       entry.ele('TEMPO', { BPM: t.bpm.toFixed(6), BPM_QUALITY: '100.000000' });
@@ -60,24 +64,46 @@ export function writeTraktorNml(
     if (traktorKeyIdx !== undefined) {
       entry.ele('MUSICAL_KEY', { VALUE: String(traktorKeyIdx) });
     }
-    // Grid marker (TYPE 4): àncora la beatgrid all'inizio quando c'è il BPM.
-    if (t.bpm !== null && t.bpm > 0) {
-      entry.ele('CUE_V2', {
-        NAME: 'Beat Marker',
+    // Grid marker (TYPE 4): Traktor lo vuole con il downbeat reale (START) e il
+    // BPM nel figlio <GRID>. Prima emettevamo START=0 senza <GRID> → griglia
+    // piatta e non sempre riconosciuta. Ora usiamo l'anchor reale se disponibile.
+    const gridBpm = t.beatgrid_bpm != null && t.beatgrid_bpm > 0 ? t.beatgrid_bpm : t.bpm;
+    if (gridBpm !== null && gridBpm > 0) {
+      const anchorMs = t.beatgrid_anchor_ms != null ? t.beatgrid_anchor_ms : 0;
+      const gridMarker = entry.ele('CUE_V2', {
+        NAME: 'AutoGrid',
+        DISPL_ORDER: '0',
         TYPE: '4',
-        START: '0.000000',
+        START: anchorMs.toFixed(6),
         LEN: '0.000000',
+        REPEATS: '-1',
         HOTCUE: '-1'
       });
+      gridMarker.ele('GRID', { BPM: gridBpm.toFixed(6) });
     }
+    // Pad hot già occupati: un loop su un pad già usato da un hot cue viene
+    // degradato a HOTCUE=-1 (in Traktor un pad tiene un solo elemento).
+    const usedHot = new Set<number>();
     for (const c of getCuesForTrack(db, t.id)) {
       if (c.cue_type === 'hot' && c.cue_index !== null && c.cue_index < 8) {
+        usedHot.add(c.cue_index);
         entry.ele('CUE_V2', {
           NAME: c.label ?? `Cue ${c.cue_index + 1}`,
           TYPE: '0',
           START: c.position_ms.toFixed(3),
           LEN: '0.000000',
           HOTCUE: String(c.cue_index)
+        });
+      } else if (c.cue_type === 'hot') {
+        // Hot cue fuori dagli 8 pad Traktor (index >= 8, es. da VirtualDJ/Engine)
+        // o senza pad (index null): degradato a cue non mappato (HOTCUE=-1) per
+        // conservarne la posizione, invece di scartarlo in silenzio.
+        entry.ele('CUE_V2', {
+          NAME: c.label ?? 'Cue',
+          TYPE: '0',
+          START: c.position_ms.toFixed(3),
+          LEN: '0.000000',
+          HOTCUE: '-1'
         });
       } else if (c.cue_type === 'memory') {
         // Memory cue → cue non-hotcue (HOTCUE=-1): sopravvive al round-trip.
@@ -89,12 +115,19 @@ export function writeTraktorNml(
           HOTCUE: '-1'
         });
       } else if (c.cue_type === 'loop' && c.length_ms !== null) {
+        // Loop-su-pad (roadmap §7.7): se il loop è su un pad hot LIBERO, conserva
+        // lo slot (prima HOTCUE era sempre -1 → si perdeva il pad nel round-trip);
+        // se il pad è già occupato da un hot cue, degrada a -1 per non collidere.
+        const hot =
+          c.cue_index !== null && c.cue_index >= 0 && c.cue_index < 8 && !usedHot.has(c.cue_index)
+            ? String(c.cue_index)
+            : '-1';
         entry.ele('CUE_V2', {
           NAME: c.label ?? 'Loop',
           TYPE: '5',
           START: c.position_ms.toFixed(3),
           LEN: c.length_ms.toFixed(3),
-          HOTCUE: '-1'
+          HOTCUE: hot
         });
       }
     }
@@ -130,15 +163,52 @@ export function writeTraktorNml(
   return { tracks: count, playlists: plCount };
 }
 
-/** C:\Music\House\a.mp3 → /:Music/:House/: ; /Users/x/a.mp3 → /:Users/:x/: */
+/** C:\Music\House\a.mp3 → /:Music/:House/: ; /Users/x/a.mp3 → /:Users/:x/:
+ *  Su un drive esterno /Volumes/USB/Music/a.mp3 → /:Music/: (il mount va tolto,
+ *  finisce in VOLUME — bug B3). */
 export function traktorDir(p: string): string {
-  const posix = p.replace(/\\/g, '/');
-  const dir = dirname(posix.replace(/^[A-Za-z]:/, ''));
+  const posix = p
+    .replace(/\\/g, '/')
+    .replace(/^[A-Za-z]:/, '') // drive Windows
+    .replace(/^\/Volumes\/[^/]+/, ''); // mount esterno macOS
+  const dir = dirname(posix);
   const parts = dir.split('/').filter(Boolean);
   return `/:${parts.join('/:')}${parts.length ? '/:' : ''}`;
 }
 
+// Nome del volume di boot (montato a "/"), scansionando /Volumes una volta.
+let _bootVolume: string | null = null;
+function bootVolumeName(): string {
+  if (_bootVolume !== null) return _bootVolume;
+  _bootVolume = '';
+  try {
+    for (const name of readdirSync('/Volumes')) {
+      try {
+        if (realpathSync(`/Volumes/${name}`) === '/') {
+          _bootVolume = name;
+          break;
+        }
+      } catch {
+        /* voce non risolvibile: salta */
+      }
+    }
+  } catch {
+    /* niente /Volumes (non-macOS): boot vuoto */
+  }
+  return _bootVolume;
+}
+
+/**
+ * VOLUME per Traktor (bug B1): Windows → "C:"; drive esterno macOS
+ * "/Volumes/USB/…" → "USB"; percorso di boot macOS → nome del volume di boot
+ * ("Macintosh HD"). Prima restituiva sempre "" su macOS, e Traktor non
+ * ritrovava i file.
+ */
 export function traktorVolume(p: string): string {
-  const m = p.match(/^([A-Za-z]:)/);
-  return m ? m[1] : '';
+  const win = p.match(/^([A-Za-z]:)/);
+  if (win) return win[1];
+  const ext = p.match(/^\/Volumes\/([^/]+)\//);
+  if (ext) return ext[1];
+  if (p.startsWith('/')) return bootVolumeName();
+  return '';
 }

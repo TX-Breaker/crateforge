@@ -104,6 +104,11 @@ export function runSidecar(opts: SidecarRunOptions): SidecarHandle {
     detached: !IS_WIN
   });
 
+  // Se il sidecar ha già emesso un errore strutturato (fail()), NON sovrascriverlo
+  // col generico "terminato con codice N": quel messaggio specifico è quello utile
+  // all'utente. Il generico resta come fallback solo per crash silenziosi
+  // (segfault, errore su stderr, exit non-zero senza evento error).
+  let sawError = false;
   const rl = createInterface({ input: child.stdout });
   rl.on('line', (line) => {
     if (!line.trim()) return;
@@ -117,6 +122,7 @@ export function runSidecar(opts: SidecarRunOptions): SidecarHandle {
       return;
     }
     if (ev && typeof ev === 'object' && typeof (ev as SidecarEvent).type === 'string') {
+      if ((ev as SidecarEvent).type === 'error') sawError = true;
       opts.onEvent(ev as SidecarEvent);
     } else {
       opts.onEvent({ type: 'log', message: line });
@@ -130,7 +136,7 @@ export function runSidecar(opts: SidecarRunOptions): SidecarHandle {
 
   const finished = new Promise<{ code: number | null }>((resolve) => {
     child.on('close', (code) => {
-      if (code !== 0 && code !== null) {
+      if (code !== 0 && code !== null && !sawError) {
         opts.onEvent({
           type: 'error',
           message: `Il sidecar è terminato con codice ${code}. ${stderrTail ? 'Dettagli: ' + stderrTail : ''}`
