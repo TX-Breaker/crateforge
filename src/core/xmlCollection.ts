@@ -35,6 +35,22 @@ interface RbTrack {
   '@_Size'?: string;
   '@_Mix'?: string;
   POSITION_MARK?: unknown;
+  TEMPO?: unknown;
+}
+
+/** Primo marker <TEMPO> (downbeat + BPM della beatgrid) da un TRACK dell'XML. */
+function firstTempo(t: RbTrack): { anchorMs: number | null; bpm: number | null } {
+  const tempos = asArray<Record<string, string>>(
+    t.TEMPO as Record<string, string> | Record<string, string>[] | undefined
+  );
+  if (!tempos.length) return { anchorMs: null, bpm: null };
+  const first = tempos[0];
+  const inizio = Number(first['@_Inizio']);
+  const bpm = Number(first['@_Bpm']);
+  return {
+    anchorMs: Number.isFinite(inizio) ? inizio * 1000 : null,
+    bpm: Number.isFinite(bpm) && bpm > 0 ? bpm : null
+  };
 }
 
 function asArray<T>(v: T | T[] | undefined): T[] {
@@ -81,10 +97,12 @@ export function ingestCollectionXml(
   const insertTrack = db.prepare(`
     INSERT INTO tracks (source, source_id, title, artist, album, genre, year, bpm,
                         musical_key, camelot, duration_s, path, filesize, version_label,
-                        has_tag_issues, needs_review, review_reason)
+                        has_tag_issues, needs_review, review_reason,
+                        beatgrid_bpm, beatgrid_anchor_ms)
     VALUES ('xml', @source_id, @title, @artist, @album, @genre, @year, @bpm,
             @musical_key, @camelot, @duration_s, @path, @filesize, @version_label,
-            @has_tag_issues, @needs_review, @review_reason)
+            @has_tag_issues, @needs_review, @review_reason,
+            @beatgrid_bpm, @beatgrid_anchor_ms)
     ON CONFLICT(source, source_id) DO UPDATE SET
       title = excluded.title, artist = excluded.artist, album = excluded.album,
       genre = excluded.genre, year = excluded.year, bpm = excluded.bpm,
@@ -92,7 +110,8 @@ export function ingestCollectionXml(
       duration_s = excluded.duration_s, path = excluded.path,
       filesize = excluded.filesize, version_label = excluded.version_label,
       has_tag_issues = excluded.has_tag_issues, needs_review = excluded.needs_review,
-      review_reason = excluded.review_reason
+      review_reason = excluded.review_reason,
+      beatgrid_bpm = excluded.beatgrid_bpm, beatgrid_anchor_ms = excluded.beatgrid_anchor_ms
   `);
   const trackIdBySourceId = new Map<string, number>();
   const getId = db.prepare(`SELECT id FROM tracks WHERE source = 'xml' AND source_id = ?`);
@@ -136,7 +155,13 @@ export function ingestCollectionXml(
             t['@_Mix'] || extractVersionLabel(title ?? '') || extractVersionLabel(path ?? ''),
           has_tag_issues: tagIssue ? 1 : 0,
           needs_review: badEncoding ? 1 : 0,
-          review_reason: badEncoding ? 'Tag con caratteri sospetti o corrotti' : null
+          review_reason: badEncoding ? 'Tag con caratteri sospetti o corrotti' : null,
+          // Beatgrid reale: primo marker TEMPO (downbeat + BPM). Prima veniva
+          // ignorata e l'export ri-sintetizzava una griglia piatta ancorata a 0.
+          ...(() => {
+            const g = firstTempo(t);
+            return { beatgrid_bpm: g.bpm, beatgrid_anchor_ms: g.anchorMs };
+          })()
         });
         const row = getId.get(sourceId) as { id: number } | undefined;
         if (row) trackIdBySourceId.set(sourceId, row.id);

@@ -120,9 +120,23 @@ export function readTraktorNml(nmlPath: string): ForeignLibrary {
     const yearRaw = info['@_RELEASE_DATE'] ?? (e['@_YEAR'] as string | undefined);
     const year = yearRaw ? Number(String(yearRaw).slice(0, 4)) || null : null;
 
-    const cues = asArray<Record<string, string>>(e.CUE_V2 as never)
-      .map(mapCue)
+    const cuesRaw = asArray<Record<string, unknown>>(e.CUE_V2 as never);
+    const cues = cuesRaw
+      .map((c) => mapCue(c as Record<string, string>))
       .filter((c): c is NormCue => c !== null);
+
+    // Beatgrid: il marker TYPE=4 porta il downbeat (START, ms) e il BPM reale nel
+    // figlio <GRID>. Prima veniva scartato → la griglia si appiattiva a 0 negli export.
+    const grid = cuesRaw.find((c) => (c as Record<string, string>)['@_TYPE'] === '4');
+    let beatgridAnchorMs: number | null = null;
+    let beatgridBpm: number | null = null;
+    if (grid) {
+      const start = Number((grid as Record<string, string>)['@_START']);
+      if (Number.isFinite(start)) beatgridAnchorMs = start;
+      const gridEl = (grid as Record<string, unknown>).GRID as Record<string, string> | undefined;
+      const gbpm = gridEl && gridEl['@_BPM'] !== undefined ? Number(gridEl['@_BPM']) : NaN;
+      if (Number.isFinite(gbpm) && gbpm > 0) beatgridBpm = gbpm;
+    }
 
     tracks.push({
       sourceId,
@@ -136,7 +150,9 @@ export function readTraktorNml(nmlPath: string): ForeignLibrary {
       durationS: playtime,
       path,
       filesize: info['@_FILESIZE'] ? Number(info['@_FILESIZE']) * 1024 || null : null,
-      cues
+      cues,
+      beatgridBpm,
+      beatgridAnchorMs
     });
   }
 

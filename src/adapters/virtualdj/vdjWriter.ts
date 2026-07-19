@@ -36,7 +36,10 @@ export function writeVirtualDjXml(
     // perde nel round-trip finché VDJ non ri-analizza.
     if (t.duration_s !== null) song.ele('Infos', { SongLength: t.duration_s.toFixed(3) });
     const scan: Record<string, string> = {};
-    if (t.bpm !== null && t.bpm > 0) scan.Bpm = (60 / t.bpm).toFixed(6); // VDJ usa secondi-per-beat
+    const scanBpm = t.beatgrid_bpm != null && t.beatgrid_bpm > 0 ? t.beatgrid_bpm : t.bpm;
+    if (scanBpm !== null && scanBpm > 0) scan.Bpm = (60 / scanBpm).toFixed(6); // VDJ usa secondi-per-beat
+    // Phase = downbeat in secondi: preserva la fase della beatgrid se nota.
+    if (t.beatgrid_anchor_ms != null) scan.Phase = (t.beatgrid_anchor_ms / 1000).toFixed(6);
     if (t.musical_key) scan.Key = t.musical_key;
     if (Object.keys(scan).length) song.ele('Scan', scan);
 

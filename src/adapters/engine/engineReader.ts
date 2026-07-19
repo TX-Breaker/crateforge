@@ -54,6 +54,13 @@ function sampleRateOf(trackData: unknown): number {
   return 44100;
 }
 
+// NOTA beatgrid Engine: il blob `beatData` (framed zlib, header BE) contiene i
+// marker della griglia, ma il layout dei marker è complesso e version-dipendente
+// e non è ancora reverse-engineered in modo affidabile (il primo marker NON è un
+// semplice double sample-offset). Per non rischiare un downbeat errato, l'anchor
+// Engine NON viene estratto: i writer ripiegano su griglia a BPM costante da 0.
+// Follow-up: parser dedicato di `beatData` validato su dati reali.
+
 /**
  * Decodifica i cue Engine dai blob PerformanceData (roadmap §7.9, prima persi).
  * Hot cue in `quickCues` (framed zlib, header int64 BE, posizioni in SAMPLE

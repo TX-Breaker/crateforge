@@ -45,13 +45,15 @@ export function writeRekordboxXml(
       Mix: t.version_label ?? '',
       Location: t.path ? pathToLocation(t.path) : ''
     });
-    // Beatgrid: senza un TEMPO Rekordbox importa il brano senza griglia. Non
-    // avendo i marker di griglia originali, ancoriamo una griglia a BPM
-    // costante dall'inizio (meglio di nessuna griglia; l'utente può correggerla).
-    if (t.bpm !== null && t.bpm > 0) {
+    // Beatgrid: senza un TEMPO Rekordbox importa il brano senza griglia. Se
+    // conosciamo il downbeat reale (beatgrid_anchor_ms, dalla sorgente), lo usiamo
+    // come Inizio; altrimenti ripieghiamo su una griglia a BPM costante da 0.
+    const gridBpm = t.beatgrid_bpm != null && t.beatgrid_bpm > 0 ? t.beatgrid_bpm : t.bpm;
+    if (gridBpm !== null && gridBpm > 0) {
+      const anchorS = t.beatgrid_anchor_ms != null ? t.beatgrid_anchor_ms / 1000 : 0;
       trackEle.ele('TEMPO', {
-        Inizio: '0.000',
-        Bpm: t.bpm.toFixed(2),
+        Inizio: anchorS.toFixed(3),
+        Bpm: gridBpm.toFixed(2),
         Metro: '4/4',
         Battito: '1'
       });

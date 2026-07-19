@@ -151,6 +151,11 @@ export function readVirtualDjXml(dbPath: string): ForeignLibrary {
       .map(mapPoi)
       .filter((c): c is NormCue => c !== null);
 
+    // Beatgrid VirtualDJ: Scan@Phase = offset del primo beat in SECONDI (downbeat),
+    // Scan@Bpm dà il tempo. Prima ignorati → la fase si perdeva nella conversione.
+    const phase = scan['@_Phase'] !== undefined ? Number(scan['@_Phase']) : NaN;
+    const beatgridAnchorMs = Number.isFinite(phase) ? phase * 1000 : null;
+
     tracks.push({
       sourceId: path, // FilePath è l'identificatore stabile in VirtualDJ
       title: tags['@_Title'] || null,
@@ -163,7 +168,9 @@ export function readVirtualDjXml(dbPath: string): ForeignLibrary {
       durationS,
       path,
       filesize,
-      cues
+      cues,
+      beatgridBpm: bpm,
+      beatgridAnchorMs
     });
   }
 
