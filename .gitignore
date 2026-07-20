@@ -19,3 +19,4 @@ tests/fixtures/master.db
 # Python bytecode
 __pycache__/
 python-sidecar/__pycache__/
+.ai-state/

@@ -1160,9 +1160,18 @@ def parse_serato_markers2(geob_data: bytes):
 
 
 def _serato_volume_root(serato_dir: str) -> str:
-    """I path nei crate/db Serato sono relativi alla root del volume."""
+    """I path nei crate/db Serato sono relativi alla root del volume.
+    macOS: drive esterno /Volumes/USB/… → '/Volumes/USB'; volume di boot → ''
+    (i rel diventano assoluti con il solo prefisso '/'). Windows: la root è il
+    drive della cartella _Serato_ (es. 'D:'), senza il quale i rel tipo
+    'Users/x/Music/a.mp3' produrrebbero path rotti '/Users/…'."""
     m = re.match(r"^(/Volumes/[^/]+)/", serato_dir)
-    return m.group(1) if m else ""
+    if m:
+        return m.group(1)
+    m = re.match(r"^([A-Za-z]:)", serato_dir)
+    if m:
+        return m.group(1)
+    return ""
 
 
 _SERATO_AUDIO_EXT = (".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a")
@@ -1266,7 +1275,15 @@ def cmd_read_serato(args: argparse.Namespace) -> None:
                 rel = _serato_text(fld.get("pfil", b"")) if fld.get("pfil") else None
                 if not rel:
                     continue
-                abs_path = (vol + "/" + rel) if not rel.startswith("/") else rel
+                # Separatori normalizzati e guardia sui rel già assoluti (con
+                # '/' su mac o drive letter su Windows). normpath rende il path
+                # nativo della piattaforma, così il confronto con os.walk in
+                # fase di scan (set `imported`) non produce doppioni su Windows.
+                rel = rel.replace("\\", "/")
+                if rel.startswith("/") or re.match(r"^[A-Za-z]:", rel):
+                    abs_path = os.path.normpath(rel)
+                else:
+                    abs_path = os.path.normpath(vol + "/" + rel)
                 bpm_txt = _serato_text(fld.get("tbpm", b""))
                 try:
                     bpm = float(bpm_txt) if bpm_txt else None
@@ -1305,7 +1322,8 @@ def cmd_read_serato(args: argparse.Namespace) -> None:
             # quando l'utente seleziona proprio la cartella _Serato_, come indica
             # la UI. In quel caso i cue GEOB nei file (709 reali) andavano persi.
             reldp = os.path.relpath(dp, root)
-            if "_Serato_" in reldp.split(os.sep) or "/.Trash" in dp:
+            # Cestini: .Trash (macOS) e $RECYCLE.BIN (Windows).
+            if "_Serato_" in reldp.split(os.sep) or "/.Trash" in dp or "$RECYCLE.BIN" in dp:
                 continue
             for f in fs:
                 if not f.lower().endswith(_SERATO_AUDIO_EXT):

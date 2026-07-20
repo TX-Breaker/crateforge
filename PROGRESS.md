@@ -338,6 +338,21 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
 - [ ] Opzionale: icon.png 1024×1024 per icona nitida su Retina (oggi 512×512,
       valida ma morbida); firma+notarizzazione Apple per rimuovere Gatekeeper
 
+## RIALLINEAMENTO WINDOWS POST-SESSIONE MAC (14→20/07/2026)
+- [x] Merge fast-forward dei 9 commit dal Mac (7ae9c55: Serato GEOB reader,
+      beatgrid reali, convertitore X→Y con preflight, rekordboxPaths,
+      preflight avvio con ensure-key, docs interop/guida utente)
+- [x] Audit win-compat del merge: rekordboxPaths/preflight/nmlWriter
+      (bootVolumeName) già cross-platform dalla sessione Mac
+- [x] FIX Windows sidecar read-serato: _serato_volume_root gestiva solo
+      /Volumes (mac) → su Windows i pfil relativi al volume producevano path
+      rotti /Users/…; ora estrae il drive della cartella _Serato_ (es. D:),
+      normalizza i separatori e salta $RECYCLE.BIN. Check unitari su venv
+- [x] .ai-state/ rimosso dal tracking (regola: niente ai-state nel repo)
+- [x] Typecheck pulito, 176/176 test verdi; sidecar Windows ricompilato dallo
+      .spec (ensure-key ha scaricato la chiave al primo colpo anche su Windows)
+- [x] dist Windows + smoke
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)
