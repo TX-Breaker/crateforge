@@ -114,4 +114,44 @@ describe('writeVirtualDjXml', () => {
     const doc = parse(out);
     expect(doc.VirtualDJ_Database.Song).toHaveLength(4);
   });
+
+  it('conserva le memory cue come marker remix invece di scartarle', () => {
+    // Regressione: la catena if/else copriva solo hot e loop, quindi ogni
+    // memory cue spariva senza traccia — cioè il 100% dei cue su una rotta
+    // VirtualDJ→VirtualDJ, dove automix/remix vengono letti proprio come memory.
+    const out = join(tmp, 'vdj.xml');
+    writeVirtualDjXml(db, out);
+    const doc = parse(out);
+    const songs = doc.VirtualDJ_Database.Song as Record<string, unknown>[];
+    const levels = songs.find((s) =>
+      String((s.Tags as Record<string, string>)['@_Title']).startsWith('Levels')
+    )!;
+    const pois = ([] as Record<string, string>[]).concat(levels.Poi as never);
+    const remix = pois.filter((p) => p['@_Type'] === 'remix');
+    expect(remix.length).toBeGreaterThan(0);
+    // La memory della fixture sta a 200.000 s → Pos in secondi.
+    expect(remix.some((p) => Number(p['@_Pos']) === 200)).toBe(true);
+  });
+
+  it('dichiara nei warning ciò che non è rappresentabile', () => {
+    const out = join(tmp, 'vdj.xml');
+    const r = writeVirtualDjXml(db, out);
+    expect(Array.isArray(r.warnings)).toBe(true);
+    // La fixture ha una memory cue: dev'essere dichiarata, non silenziosa.
+    expect(r.warnings.some((w) => w.toLowerCase().includes('memory'))).toBe(true);
+  });
+
+  it('riscrive il colore del cue quando presente nel pivot', () => {
+    const out = join(tmp, 'vdj.xml');
+    // Colore su un hot cue esistente: il reader VDJ lo sa rileggere.
+    db.prepare(`UPDATE cues SET color = '#ff8800' WHERE cue_type = 'hot'`).run();
+    writeVirtualDjXml(db, out);
+    const doc = parse(out);
+    const songs = doc.VirtualDJ_Database.Song as Record<string, unknown>[];
+    const withColor = songs
+      .flatMap((s) => ([] as Record<string, string>[]).concat((s.Poi ?? []) as never))
+      .filter(Boolean)
+      .filter((p) => p['@_Color'] === '#FF8800');
+    expect(withColor.length).toBeGreaterThan(0);
+  });
 });

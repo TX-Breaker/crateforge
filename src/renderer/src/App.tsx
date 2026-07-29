@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useAppState } from '@/lib/appState';
 import { t, type MsgKey } from '@/lib/i18n';
 import { Badge } from '@/components/ui/misc';
+import { OsSetupDialog } from '@/components/OsSetupDialog';
 import { Dashboard } from '@/pages/Dashboard';
 import { HealthPage } from '@/pages/HealthPage';
 import { SetBuilderPage } from '@/pages/SetBuilderPage';
@@ -109,6 +110,9 @@ export function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
+      {/* Primo avvio: chiede su quale sistema si sta lavorando (OS rilevato
+          pre-selezionato). Da lì dipendono scorciatoie, percorsi e comandi. */}
+      <OsSetupDialog />
       <aside className="flex w-56 shrink-0 flex-col border-r bg-muted/30">
         <div className="flex items-center gap-2 px-4 pb-2 pt-5">
           <span className="text-lg font-bold tracking-tight">CrateForge</span>

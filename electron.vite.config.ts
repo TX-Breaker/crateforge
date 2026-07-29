@@ -20,7 +20,10 @@ export default defineConfig({
     plugins: [react()],
     resolve: {
       alias: {
-        '@': resolve(__dirname, 'src/renderer/src')
+        '@': resolve(__dirname, 'src/renderer/src'),
+        // Solo per i moduli PURI di src/core (es. platformProfile): niente
+        // import di Node/Electron, così sono condivisibili col renderer.
+        '@core': resolve(__dirname, 'src/core')
       }
     }
   }

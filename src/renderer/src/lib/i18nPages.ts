@@ -119,6 +119,7 @@ export const pages: Record<Locale, PageDict> = {
         'I file NON vengono eliminati e potrai ripristinarli. Se alcuni servono ad altri programmi, escludili prima dalla selezione.'
     },
     converter: {
+      warnHeader: 'Cosa non è passato nella conversione:',
       title: 'Converti libreria',
       subtitle: 'Esporta la libreria verso altri software DJ. Sempre su file nuovi: gli originali non vengono toccati.',
       fmtRekordbox: 'Per re-import nella collection o per condividere la libreria.',
@@ -467,6 +468,23 @@ export const pages: Record<Locale, PageDict> = {
       mdbOutDone: 'Playlist "{name}" scritta nel master.db ({n} brani aggiunti, {missing} non trovati). Backup in {dir}. Riapri Rekordbox per vederla.',
       mdbErr: 'Scrittura nel master.db non riuscita: {msg}'
     },
+    ossetup: {
+      title: 'Su che sistema stai lavorando?',
+      subtitle: 'Scorciatoie da tastiera, percorsi delle librerie DJ e comandi da terminale sono diversi tra Windows e macOS. Scegli il sistema e CrateForge mostrerà ovunque quelli giusti.',
+      detected: 'rilevato',
+      exShortcut: 'Copia: {s}',
+      mismatch: 'Stai per usare i riferimenti di {chosen}, ma questa app sta girando su {detected}. È corretto se stai preparando il lavoro per un altro computer.',
+      changeLater: 'Puoi cambiarlo quando vuoi da Impostazioni.',
+      confirm: 'Continua con {os}',
+      settingsTitle: 'Sistema di riferimento',
+      settingsDesc: 'Determina scorciatoie, percorsi delle librerie e comandi mostrati nell\'app.',
+      settingsMismatch: 'Profilo diverso dal sistema su cui stai eseguendo CrateForge ({detected}).',
+      pathsTitle: 'Dove tengono le librerie i software DJ',
+      pathsDesc: 'Percorsi tipici su {os}: servono a sapere cosa cercare quando scegli un file.',
+      pickFile: 'file',
+      pickDir: 'cartella',
+      shortcutsTitle: 'Scorciatoie ({os})'
+    },
     siae: {
       title: 'Report SIAE',
       subtitle: 'Esporta l\'elenco dei brani riprodotti in una serata per la dichiarazione SIAE.',
@@ -640,6 +658,7 @@ export const pages: Record<Locale, PageDict> = {
         'Files are NOT deleted and can be restored. If other programs need some of them, exclude them from the selection first.'
     },
     converter: {
+      warnHeader: 'What did not carry over in the conversion:',
       title: 'Convert library',
       subtitle: 'Exports your library to other DJ software. Always into new files: originals are never touched.',
       fmtRekordbox: 'For re-import into the collection or to share the library.',
@@ -988,6 +1007,23 @@ export const pages: Record<Locale, PageDict> = {
       mdbOutDone: 'Playlist "{name}" written into master.db ({n} tracks added, {missing} not found). Backup in {dir}. Reopen Rekordbox to see it.',
       mdbErr: 'Writing into master.db failed: {msg}'
     },
+    ossetup: {
+      title: 'Which system are you working on?',
+      subtitle: 'Keyboard shortcuts, DJ library paths and terminal commands differ between Windows and macOS. Pick the system and CrateForge will show the right ones everywhere.',
+      detected: 'detected',
+      exShortcut: 'Copy: {s}',
+      mismatch: 'You are about to use {chosen} references, but this app is running on {detected}. That is fine if you are preparing work for another computer.',
+      changeLater: 'You can change it any time in Settings.',
+      confirm: 'Continue with {os}',
+      settingsTitle: 'Reference system',
+      settingsDesc: 'Drives the shortcuts, library paths and commands shown in the app.',
+      settingsMismatch: 'Profile differs from the system CrateForge is running on ({detected}).',
+      pathsTitle: 'Where DJ software keeps its libraries',
+      pathsDesc: 'Typical paths on {os}: they tell you what to look for when picking a file.',
+      pickFile: 'file',
+      pickDir: 'folder',
+      shortcutsTitle: 'Shortcuts ({os})'
+    },
     siae: {
       title: 'SIAE report',
       subtitle: 'Export the list of tracks played in a night for the SIAE declaration.',
@@ -1161,6 +1197,7 @@ export const pages: Record<Locale, PageDict> = {
         "Les fichiers ne sont PAS supprimés et pourront être restaurés. Si d'autres programmes en ont besoin, excluez-les d'abord de la sélection."
     },
     converter: {
+      warnHeader: 'Ce qui n\'a pas été transféré lors de la conversion :',
       title: 'Convertir la bibliothèque',
       subtitle: "Exporte la bibliothèque vers d'autres logiciels DJ. Toujours dans de nouveaux fichiers : les originaux ne sont jamais touchés.",
       fmtRekordbox: 'Pour réimporter dans la collection ou partager la bibliothèque.',
@@ -1509,6 +1546,23 @@ export const pages: Record<Locale, PageDict> = {
       mdbOutDone: 'Playlist « {name} » écrite dans master.db ({n} titres ajoutés, {missing} introuvables). Sauvegarde dans {dir}. Rouvrez Rekordbox pour la voir.',
       mdbErr: 'Échec de l\'écriture dans master.db : {msg}'
     },
+    ossetup: {
+      title: 'Sur quel système travaillez-vous ?',
+      subtitle: 'Les raccourcis clavier, les chemins des bibliothèques DJ et les commandes du terminal diffèrent entre Windows et macOS. Choisissez le système et CrateForge affichera partout les bons.',
+      detected: 'détecté',
+      exShortcut: 'Copier : {s}',
+      mismatch: 'Vous allez utiliser les références {chosen}, mais cette app tourne sur {detected}. C\'est correct si vous préparez le travail pour un autre ordinateur.',
+      changeLater: 'Vous pouvez le changer à tout moment dans les Paramètres.',
+      confirm: 'Continuer avec {os}',
+      settingsTitle: 'Système de référence',
+      settingsDesc: 'Détermine les raccourcis, chemins de bibliothèque et commandes affichés dans l\'app.',
+      settingsMismatch: 'Profil différent du système sur lequel CrateForge s\'exécute ({detected}).',
+      pathsTitle: 'Où les logiciels DJ gardent leurs bibliothèques',
+      pathsDesc: 'Chemins typiques sur {os} : ils indiquent quoi chercher au moment de choisir un fichier.',
+      pickFile: 'fichier',
+      pickDir: 'dossier',
+      shortcutsTitle: 'Raccourcis ({os})'
+    },
     siae: {
       title: 'Rapport SIAE',
       subtitle: 'Exportez la liste des morceaux joués dans une soirée pour la déclaration SIAE.',
@@ -1682,6 +1736,7 @@ export const pages: Record<Locale, PageDict> = {
         'Die Dateien werden NICHT gelöscht und können wiederhergestellt werden. Falls andere Programme einige davon brauchen, nimm sie vorher aus der Auswahl.'
     },
     converter: {
+      warnHeader: 'Was bei der Konvertierung nicht übernommen wurde:',
       title: 'Bibliothek konvertieren',
       subtitle: 'Exportiert die Bibliothek zu anderer DJ-Software. Immer in neue Dateien: Originale werden nie angefasst.',
       fmtRekordbox: 'Für den Re-Import in die Collection oder zum Teilen der Bibliothek.',
@@ -2029,6 +2084,23 @@ export const pages: Record<Locale, PageDict> = {
       mdbDlgBody2: 'Bevor du fortfährst, SCHLIESSE Rekordbox vollständig: ist es offen, kann das Schreiben die Bibliothek beschädigen. Das Häkchen unten bestätigt, dass du es geschlossen hast.',
       mdbOutDone: 'Playlist „{name}" in master.db geschrieben ({n} Titel hinzugefügt, {missing} nicht gefunden). Backup in {dir}. Öffne Rekordbox neu, um sie zu sehen.',
       mdbErr: 'Schreiben in master.db fehlgeschlagen: {msg}'
+    },
+    ossetup: {
+      title: 'Auf welchem System arbeitest du?',
+      subtitle: 'Tastenkürzel, Pfade der DJ-Bibliotheken und Terminal-Befehle unterscheiden sich zwischen Windows und macOS. Wähle das System, und CrateForge zeigt überall die richtigen an.',
+      detected: 'erkannt',
+      exShortcut: 'Kopieren: {s}',
+      mismatch: 'Du verwendest gleich die {chosen}-Angaben, diese App läuft aber auf {detected}. Das ist richtig, wenn du die Arbeit für einen anderen Computer vorbereitest.',
+      changeLater: 'Du kannst es jederzeit in den Einstellungen ändern.',
+      confirm: 'Weiter mit {os}',
+      settingsTitle: 'Referenzsystem',
+      settingsDesc: 'Bestimmt die in der App gezeigten Tastenkürzel, Bibliothekspfade und Befehle.',
+      settingsMismatch: 'Profil weicht vom System ab, auf dem CrateForge läuft ({detected}).',
+      pathsTitle: 'Wo DJ-Software ihre Bibliotheken ablegt',
+      pathsDesc: 'Typische Pfade unter {os}: Sie zeigen, wonach du beim Dateiauswählen suchst.',
+      pickFile: 'Datei',
+      pickDir: 'Ordner',
+      shortcutsTitle: 'Tastenkürzel ({os})'
     },
     siae: {
       title: 'SIAE-Bericht',

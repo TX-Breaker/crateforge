@@ -13,8 +13,15 @@
     "composite": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/src/*"]
+      "@/*": ["src/renderer/src/*"],
+      "@core/*": ["src/core/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/preload/api.d.ts", "tests/i18nParity.test.ts"]
+  "include": [
+    "src/renderer/**/*",
+    "src/preload/api.d.ts",
+    "src/core/platformProfile.ts",
+    "tests/i18nParity.test.ts",
+    "tests/platformProfile.test.ts"
+  ]
 }

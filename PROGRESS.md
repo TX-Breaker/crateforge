@@ -353,6 +353,56 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
       .spec (ensure-key ha scaricato la chiave al primo colpo anche su Windows)
 - [x] dist Windows + smoke
 
+## PROFILO OS + FIX PERDITE SILENZIOSE (20/07/2026)
+
+### Profilo OS (richiesta utente: "chiedi da che OS mi stai eseguendo")
+- [x] `src/core/platformProfile.ts` (modulo puro, condiviso main+renderer):
+      scorciatoie tastiera per OS (Ctrl vs ⌘, Alt+F4 vs ⌘Q), percorsi tipici
+      delle librerie dei 5 software DJ, comandi terminale (explorer/open,
+      xattr), nomi file manager/terminale, hint sblocco SmartScreen/Gatekeeper
+- [x] IPC `platform:detect` → OS reale del processo; appState esteso con
+      `targetOs` (scelta), `detectedOs` (rilevato), `osMismatch`
+- [x] `OsSetupDialog`: al PRIMO avvio chiede il sistema con quello rilevato
+      GIÀ PRE-SELEZIONATO e marcato "rilevato"; mostra un'anteprima concreta
+      (scorciatoia + percorso master.db) e avvisa se la scelta diverge dalla
+      macchina. Scelta persistita, ripetibile da Impostazioni
+- [x] Pannello "Sistema di riferimento" in Impostazioni: switch OS, elenco
+      scorciatoie e tabella percorsi librerie dei 5 software
+- [x] i18n `ossetup` ×4 lingue; 15 test in `tests/platformProfile.test.ts`
+      (incluso: mai mescolare Ctrl e ⌘, mai path Windows nel profilo mac)
+
+### Perdite silenziose chiuse (audit multi-agente, 20 agenti, verifica avversariale)
+- [x] **VirtualDJ writer: memory cue perse in silenzio** (blocker confermato 3×).
+      La catena if/else copriva solo hot e loop → su rotta VDJ→VDJ spariva il
+      100% dei cue (i marker automix/remix vengono letti come memory). Ora
+      memory → `Poi Type="remix"` (inverso esatto del reader)
+- [x] VirtualDJ writer: **colore mai riscritto** benché il reader lo legga →
+      helper `vdjColorAttr` (#RRGGBB, attributo omesso se assente: niente
+      valori inventati)
+- [x] VirtualDJ writer: ramo `else` di sicurezza per hot senza pad e loop senza
+      lunghezza (prima persi) + `warnings[]` nel valore di ritorno
+- [x] **ConverterPage: i warning dell'import venivano cancellati** dall'export
+      che partiva subito dopo (`setOutcome(null)`) → l'utente non leggeva mai
+      che le SMARTLIST Traktor erano state saltate. Ora canale `warnings`
+      separato e persistente, con sezione "Cosa non è passato" (i18n ×4)
+- [x] syncDaemon: confronto path **canonicalizzato** (NFC + case) come
+      orphanFinder, via indice in memoria per scansione — niente migrazione di
+      schema. Prima lo stesso brano poteva rientrare in coda all'infinito
+- [x] reportViewer: **cache del workbook** (invalidata su mtime+size) — prima
+      ogni cambio pagina rileggeva e riparsava l'INTERO .xlsx
+- [x] Test di regressione: memory→remix, warning dichiarati, colore riscritto
+
+### Ancora aperto (serve materiale che qui non c'è)
+- [ ] Writer Serato: il reader GEOB è LOSSY (scarta COLOR/BPMLOCK/FLIP e il
+      byte `locked` dei loop), quindi un writer "inverso del reader"
+      DISTRUGGEREBBE dati esistenti. Serve: file audio Serato-taggati reali +
+      round-trip byte-per-byte prima di scrivere
+- [ ] Writer Engine DJ: serve un m.db di riferimento per validare il prefisso
+      di lunghezza del blob PerformanceData (Engine lo valida davvero) e il
+      trailer di 17 byte che il reader oggi scarta
+- [ ] Traktor SMARTLIST: oggi solo contate e (ora) dichiarate; la conversione
+      richiede il parsing del linguaggio di query NML
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)

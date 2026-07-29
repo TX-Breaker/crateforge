@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Moon, Sun, SunMoon } from 'lucide-react';
+import { Apple, KeyRound, Monitor, Moon, Sun, SunMoon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle, Input, Label, Switch } from '@/components/ui/misc';
 import { useAppState, type Theme } from '@/lib/appState';
 import { LOCALES } from '@/lib/i18n';
 import { pageText } from '@/lib/i18nPages';
+import {
+  libraryLocations,
+  osLabel,
+  shortcut,
+  type ShortcutAction,
+  type TargetOs
+} from '@core/platformProfile';
 
 /**
  * Impostazioni: tema, lingua, modalità Semplice/Esperto (§5).
  * La modalità Esperto sblocca le funzioni avanzate, ognuna con disclaimer.
  */
 export function SettingsPage() {
-  const { theme, setTheme, mode, setMode, locale, setLocale } = useAppState();
+  const { theme, setTheme, mode, setMode, locale, setLocale, targetOs, setTargetOs, detectedOs, osMismatch } =
+    useAppState();
   const tp = (k: string, p?: Record<string, string | number>) => pageText(locale, 'settings', k, p);
+  const to = (k: string, p?: Record<string, string | number>) => pageText(locale, 'ossetup', k, p);
   const [sidecar, setSidecar] = useState<{ available: boolean; binaryPath?: string } | null>(null);
   const [directWrites, setDirectWrites] = useState(false);
   const [masterDbWrites, setMasterDbWrites] = useState(false);
@@ -95,6 +104,71 @@ export function SettingsPage() {
                 >
                   {l.label}
                 </Button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Profilo OS: guida scorciatoie, percorsi librerie e comandi mostrati. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{to('settingsTitle')}</CardTitle>
+          <CardDescription>{to('settingsDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            {(['win', 'mac'] as TargetOs[]).map((o) => (
+              <Button
+                key={o}
+                variant={targetOs === o ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTargetOs(o)}
+              >
+                {o === 'mac' ? <Apple /> : <Monitor />} {osLabel(o)}
+                {detectedOs === o ? ` · ${to('detected')}` : ''}
+              </Button>
+            ))}
+          </div>
+
+          {osMismatch && detectedOs && (
+            <Alert variant="warning">
+              <AlertDescription>
+                {to('settingsMismatch', { detected: osLabel(detectedOs) })}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-1.5">
+            <Label>{to('shortcutsTitle', { os: osLabel(targetOs) })}</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {(['copy', 'paste', 'selectAll', 'find', 'close', 'quit'] as ShortcutAction[]).map(
+                (a) => (
+                  <span key={a} className="rounded border px-2 py-0.5 font-mono text-[11px]">
+                    {shortcut(targetOs, a)}
+                  </span>
+                )
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1.5 border-t pt-3">
+            <Label>{to('pathsTitle')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {to('pathsDesc', { os: osLabel(targetOs) })}
+            </p>
+            <div className="space-y-1">
+              {libraryLocations(targetOs).map((l) => (
+                <div key={l.label} className="rounded-md border p-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">{l.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      ({l.pick === 'dir' ? to('pickDir') : to('pickFile')})
+                    </span>
+                  </div>
+                  <code className="break-all text-[11px] text-muted-foreground">{l.path}</code>
+                  {l.note && <p className="mt-0.5 text-[10px] text-muted-foreground">{l.note}</p>}
+                </div>
               ))}
             </div>
           </div>

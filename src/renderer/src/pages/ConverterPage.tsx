@@ -136,6 +136,12 @@ export function ConverterPage() {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Avvisi di perdita (cosa NON è passato): raccolti sia dall'import sia
+  // dall'export e mostrati insieme all'esito. Prima i warning dell'import
+  // finivano in `outcome` e venivano cancellati dall'export che partiva subito
+  // dopo: l'utente non leggeva mai, per esempio, che le SMARTLIST di Traktor
+  // erano state saltate.
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [guideOpen, setGuideOpen] = useState(false);
   // Conversione diretta X→Y.
   const [srcSel, setSrcSel] = useState<SourceId>('rekordbox-db');
@@ -154,6 +160,7 @@ export function ConverterPage() {
   const importSource = async (src: SourceId): Promise<boolean> => {
     setError(null);
     setOutcome(null);
+    setWarnings([]);
     // Serato: si sceglie la CARTELLA "_Serato_" (i cue stanno nei tag dei file).
     if (src === 'serato') {
       const dir = await window.crateforge.dialog.openDirectory();
@@ -201,7 +208,7 @@ export function ConverterPage() {
           setError(r.message ?? tp('convErr'));
           return false;
         }
-        if (r.warnings?.length) setOutcome(r.warnings.join(' '));
+        if (r.warnings?.length) setWarnings((w) => [...w, ...r.warnings!]);
       }
       return true;
     } catch (err) {
@@ -246,6 +253,9 @@ export function ConverterPage() {
         tp('outDone', { fmt: fmt.title, n: r.tracks.toLocaleString(locale), path: outPath }) +
           (fmt.id === 'rekordbox' ? tp('outRbTail') : '')
       );
+      // Avvisi del writer (es. memory cue rese come marker): si sommano a
+      // quelli dell'import, così l'utente vede l'intero bilancio di perdita.
+      if (r.warnings?.length) setWarnings((w) => [...w, ...r.warnings!]);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -358,6 +368,22 @@ export function ConverterPage() {
                 <BookOpen /> {pageText(locale, 'guide', 'openImport')}
               </Button>
             </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Bilancio di perdita: cosa NON è passato (import + export). Onestà §1:
+          una perdita accettabile va comunque dichiarata, mai nascosta. */}
+      {warnings.length > 0 && (
+        <Alert variant="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <p className="mb-1 font-medium">{tp('warnHeader')}</p>
+            <ul className="list-disc space-y-0.5 pl-4 text-xs">
+              {warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
           </AlertDescription>
         </Alert>
       )}

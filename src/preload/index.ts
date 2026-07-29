@@ -150,6 +150,14 @@ const api = {
       ipcRenderer.invoke('dialog:saveFile', defaultName, filters)
   },
   // Percorsi di default dell'installazione Rekordbox dell'utente corrente.
+  platform: {
+    // OS reale del processo, per pre-selezionare il profilo al primo avvio.
+    detect: () =>
+      ipcRenderer.invoke('platform:detect') as Promise<{
+        detected: 'win' | 'mac';
+        nodePlatform: string;
+      }>
+  },
   rekordbox: {
     defaultPaths: () =>
       ipcRenderer.invoke('rekordbox:defaultPaths') as Promise<{

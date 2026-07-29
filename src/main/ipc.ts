@@ -53,6 +53,7 @@ import type { TrackRow } from '@core/udm';
 import { ThrottledProgress } from './progress';
 import { checkSidecar, runSidecar, SidecarEvent } from './sidecar';
 import { rekordboxDefaultPaths } from './rekordboxPaths';
+import { osFromNodePlatform } from '@core/platformProfile';
 import { getLastPreflight, runPreflight } from './preflight';
 
 /**
@@ -144,6 +145,14 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
   // Percorsi di default dell'installazione Rekordbox dell'utente (per pre-puntare
   // il file picker del master.db e rilevarlo automaticamente sulla sua macchina).
   ipcMain.handle('rekordbox:defaultPaths', () => rekordboxDefaultPaths());
+
+  // OS su cui STA GIRANDO davvero il processo: serve al renderer per
+  // pre-selezionare il profilo di piattaforma (scorciatoie, percorsi, comandi)
+  // al primo avvio. L'utente può poi scegliere l'altro (§ profilo OS).
+  ipcMain.handle('platform:detect', () => ({
+    detected: osFromNodePlatform(process.platform),
+    nodePlatform: process.platform
+  }));
 
   // Stato del preflight all'avvio (sidecar eseguibile + chiave pronta). `get`
   // ritorna l'ultimo esito (null se il controllo è ancora in corso); `rerun` lo
