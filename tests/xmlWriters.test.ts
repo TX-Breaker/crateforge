@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { XMLParser } from 'fast-xml-parser';
@@ -144,6 +144,24 @@ describe('writeVirtualDjXml', () => {
     expect(Array.isArray(r.warnings)).toBe(true);
     // La fixture ha una memory cue: dev'essere dichiarata, non silenziosa.
     expect(r.warnings.some((w) => w.toLowerCase().includes('memory'))).toBe(true);
+  });
+
+  it('scrive le playlist come file .vdjfolder accanto al database', () => {
+    // In VirtualDJ le playlist NON stanno nel database.xml: sono file
+    // separati sotto "Folders". Prima non le esportavamo affatto.
+    const out = join(tmp, 'vdj.xml');
+    const r = writeVirtualDjXml(db, out);
+    expect(r.playlists).toBeGreaterThan(0);
+    const dir = join(tmp, 'Folders');
+    const files = readdirSync(dir).filter((f) => f.endsWith('.vdjfolder'));
+    expect(files.length).toBe(r.playlists);
+    const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(
+      readFileSync(join(dir, files[0]), 'utf-8')
+    );
+    const songs = doc.VirtualFolder.song;
+    const arr = Array.isArray(songs) ? songs : [songs];
+    expect(arr.length).toBeGreaterThan(0);
+    expect(arr[0]['@_path']).toBeTruthy();
   });
 
   it('riscrive il colore del cue quando presente nel pivot', () => {

@@ -1322,6 +1322,118 @@ def _serato_cue_entry(index: int, position_ms: int, color: str | None, label: st
     )
 
 
+def _serato_loop_entry(index: int, start_ms: int, end_ms: int, color: str | None, label: str | None) -> bytes:
+    """Entry LOOP nel formato Serato (21 byte + eventuale etichetta).
+
+    Layout verificato su loop creati a mano in Serato:
+      [0]=00, [1]=index, [2:6]=inizio uint32 BE (ms), [6:10]=fine uint32 BE,
+      [10:14]=FF FF FF FF (costante), [14]=00, [15:18]=colore RGB, [18]=00,
+      [19]=loop bloccato (0/1), [20:]=nome NUL-terminated.
+
+    Nota: nei dati reali il colore dei loop è sempre lo stesso (#27AAE1) —
+    Serato usa un colore unico per i loop e non lo rende configurabile — ma lo
+    scriviamo comunque da quello del pivot, così un colore esplicito non va
+    perso se in futuro Serato lo supporta.
+    """
+    import struct as _s
+
+    rgb = b"\x27\xaa\xe1"  # colore loop di Serato, osservato su tutti i loop reali
+    if color and len(color) == 7 and color[0] == "#":
+        try:
+            rgb = bytes.fromhex(color[1:])
+        except ValueError:
+            pass
+    name = (label or "").encode("utf-8")
+    return (
+        b"\x00"
+        + bytes([index & 0xFF])
+        + _s.pack(">I", max(0, int(start_ms)))
+        + _s.pack(">I", max(0, int(end_ms)))
+        + b"\xff\xff\xff\xff"
+        + b"\x00"
+        + rgb
+        + b"\x00"
+        + b"\x00"  # loop non bloccato
+        + name
+        + b"\x00"
+    )
+
+
+def _serato_field(tag: str, payload: bytes) -> bytes:
+    """Campo Serato: [tag 4 char ASCII][uint32 BE lunghezza][payload]."""
+    import struct as _s
+
+    return tag.encode("ascii") + _s.pack(">I", len(payload)) + payload
+
+
+def cmd_write_serato_crates(args: argparse.Namespace) -> None:
+    """Scrive i crate (playlist) di Serato in Subcrates/*.crate.
+
+    Formato dedotto dal reader già validato: sequenza di campi
+    [tag][uint32 BE lunghezza][payload], con `vrsn` (versione, UTF-16-BE) e un
+    `otrk` per brano contenente `ptrk` = percorso relativo al volume.
+
+    ONESTÀ: a differenza dei cue, questo formato NON è stato verificato con un
+    round-trip byte-identico su un crate scritto da Serato, perché nella
+    libreria di riferimento non ne esiste nessuno. Per questo NON sovrascrive
+    mai un crate esistente: se il file c'è già, lo salta e lo segnala.
+    """
+    try:
+        jobs = _load_json_payload(args.crates_json, getattr(args, "crates_file", None))
+        assert isinstance(jobs, list)
+    except (json.JSONDecodeError, AssertionError, OSError):
+        fail("--crates-json non valido: atteso un array [{name, paths:[...]}].")
+        return
+
+    serato_dir = args.serato_dir
+    if not os.path.isdir(serato_dir):
+        fail(f"Cartella _Serato_ non trovata: {serato_dir}")
+        return
+    sub = os.path.join(serato_dir, "Subcrates")
+    os.makedirs(sub, exist_ok=True)
+
+    # I path nei crate sono relativi alla radice del volume che contiene
+    # _Serato_ (stessa regola usata in lettura).
+    vol = _serato_volume_root(serato_dir)
+
+    written = 0
+    skipped: list[str] = []
+    results = []
+    for job in jobs:
+        name = (job.get("name") or "").strip()
+        paths = job.get("paths") or []
+        if not name or not paths:
+            continue
+        safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)[:120]
+        target = os.path.join(sub, f"{safe}.crate")
+        if os.path.exists(target):
+            # Mai sovrascrivere un crate dell'utente: il formato non è
+            # verificato byte-per-byte e la perdita sarebbe silenziosa.
+            skipped.append(name)
+            continue
+
+        blob = _serato_field("vrsn", "1.0/Serato ScratchLive Crate".encode("utf-16-be"))
+        for p in paths:
+            rel = p.replace("\\", "/")
+            if vol and rel.lower().startswith(vol.lower().replace("\\", "/")):
+                rel = rel[len(vol):].lstrip("/")
+            elif re.match(r"^[A-Za-z]:", rel):
+                rel = rel[2:].lstrip("/")  # via il drive: il crate è volume-relativo
+            blob += _serato_field("otrk", _serato_field("ptrk", rel.encode("utf-16-be")))
+        try:
+            with open(target, "wb") as f:
+                f.write(blob)
+            written += 1
+            results.append({"name": name, "file": target, "tracks": len(paths)})
+        except OSError as exc:
+            skipped.append(f"{name} ({exc})")
+
+    emit({
+        "type": "done",
+        "data": {"written": written, "skipped": skipped, "crates": results[:100]},
+    })
+
+
 def cmd_write_serato_cues(args: argparse.Namespace) -> None:
     """Scrive gli hot cue nei tag GEOB 'Serato Markers2' dei file audio.
 
@@ -1355,6 +1467,7 @@ def cmd_write_serato_cues(args: argparse.Namespace) -> None:
     for i, job in enumerate(jobs):
         path = job.get("path")
         cues = job.get("cues") or []
+        loops = job.get("loops") or []
         entry = {
             "path": path, "ok": False, "rolledBack": False, "cues": 0,
             "preserved": 0, "skippedPads": 0, "legacyV1": False, "error": None,
@@ -1405,11 +1518,13 @@ def cmd_write_serato_cues(args: argparse.Namespace) -> None:
                             f"il GEOB contiene {len(body) - consumed} byte non riconosciuti "
                             "(versione di Serato più recente): scrittura annullata per non perderli"
                         )
-                    # Conserviamo TUTTO tranne i CUE, che stiamo sostituendo.
-                    # I LOOP restano com'erano: qui scriviamo solo gli hot cue,
-                    # e cancellare i loop dell'utente sarebbe una perdita muta.
+                    # Conserviamo TUTTO tranne ciò che stiamo riscrivendo: i CUE
+                    # sempre, i LOOP solo se ne abbiamo di nuovi da scrivere —
+                    # altrimenti restano quelli dell'utente, perché cancellarli
+                    # sarebbe una perdita muta.
+                    replacing = {"CUE"} | ({"LOOP"} if loops else set())
                     for name, payload in parsed:
-                        if name != "CUE":
+                        if name not in replacing:
                             preserved.append((name, payload))
                     break
 
@@ -1428,10 +1543,24 @@ def cmd_write_serato_cues(args: argparse.Namespace) -> None:
                 new_entries.append(
                     ("CUE", _serato_cue_entry(int(idx), c.get("positionMs") or 0, c.get("color"), c.get("label")))
                 )
+            # I LOOP vanno dopo i CUE, come nei file scritti da Serato.
+            for l in sorted(loops, key=lambda x: x.get("index") or 0):
+                idx = l.get("index")
+                if idx is None or int(idx) < 0 or int(idx) > 7:
+                    skipped_pads += 1
+                    continue
+                start = int(l.get("startMs") or 0)
+                end = int(l.get("endMs") or 0)
+                if end <= start:
+                    continue  # loop senza durata: non rappresentabile
+                new_entries.append(
+                    ("LOOP", _serato_loop_entry(int(idx), start, end, l.get("color"), l.get("label")))
+                )
             for name, payload in preserved:
                 if name != "COLOR":
                     new_entries.append((name, payload))
             entry["skippedPads"] = skipped_pads
+            entry["loops"] = len([e for e in new_entries if e[0] == "LOOP"])
 
             blob = _serato_build_markers2(version, new_entries, total_size)
             if old_key is not None:
@@ -1797,6 +1926,12 @@ def main() -> None:
     p_ser.add_argument("--serato-dir", required=True)
 
     # Scrittura dei cue nei tag GEOB dei file audio (§3.4: backup + rollback).
+    p_wc = sub.add_parser("write-serato-crates")
+    p_wc.add_argument("--udm-path", required=True)
+    p_wc.add_argument("--serato-dir", required=True)
+    p_wc.add_argument("--crates-json", required=False)
+    p_wc.add_argument("--crates-file", required=False)
+
     p_ws = sub.add_parser("write-serato-cues")
     p_ws.add_argument("--udm-path", required=True)
     p_ws.add_argument("--cues-json", required=False)
@@ -1842,6 +1977,8 @@ def main() -> None:
         cmd_read_serato(args)
     elif args.command == "write-serato-cues":
         cmd_write_serato_cues(args)
+    elif args.command == "write-serato-crates":
+        cmd_write_serato_crates(args)
     elif args.command == "read-history":
         cmd_read_history(args)
     elif args.command == "masterdb-create-playlist":

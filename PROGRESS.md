@@ -526,6 +526,42 @@ Non scriviamo deliberatamente: forma d'onda (`overviewWaveFormData`) e griglia
 Engine li rigenera alla prima analisi, e questo è meglio che scrivere dati
 inventati.
 
+## PUNTI APERTI CHIUSI: LOOP SERATO + PLAYLIST (29/07/2026)
+
+- [x] **Loop in scrittura verso Serato**: entry LOOP misurata sui loop reali
+      dell'utente (21 byte: `00 | index | uint32 BE inizio | uint32 BE fine |
+      FF FF FF FF | 00 | RGB | 00 | bloccato` + nome). Round-trip
+      byte-identico su un file con 8 CUE + 8 LOOP. I loop esistenti restano
+      intatti se non ne scriviamo di nuovi
+- [x] **Playlist verso Engine DJ**: sono due liste concatenate (`nextListId`
+      tra playlist, `nextEntityId` tra brani, zero come terminatore). Test con
+      ordine volutamente invertito: TRE → UNO → DUE riletto identico,
+      integrity_check ok e foreign_key_check vuoto
+- [x] **Playlist verso VirtualDJ**: non stanno nel database.xml ma come file
+      `.vdjfolder` sotto "Folders", con un `<song path>` per brano nell'ordine
+
+### Matrice di export aggiornata
+| Formato | Brani | Cue | Loop | Playlist |
+|---------|-------|-----|------|----------|
+| Rekordbox XML | sì | sì | sì | sì |
+| Traktor NML | sì | sì | sì | sì |
+| VirtualDJ | sì | sì | sì | **sì (nuovo)** |
+| Serato | n/a (scrive nei file) | sì | **sì (nuovo)** | **sì (nuovo, da validare)** |
+| Engine DJ | sì | sì | sì | **sì (nuovo)** |
+
+- [x] **Crate Serato** (`Subcrates/*.crate`): writer implementato dal formato
+      del reader (campi `[tag][uint32 BE len][payload]`, `vrsn` + un `otrk`
+      per brano con `ptrk` = percorso relativo al volume). Scritto e riletto
+      correttamente dal nostro parser. ONESTÀ: manca il round-trip contro un
+      crate scritto da Serato (nella libreria di riferimento non ne esiste
+      nessuno), quindi il writer **non sovrascrive mai un crate esistente**
+
+### Ancora aperto
+- [ ] Downbeat da Engine: il blob `beatData` non è decodificato, quindi la
+      griglia viene ricostruita a BPM costante da zero
+- [ ] SMARTLIST Traktor e filter-folder VirtualDJ: dichiarati, non convertiti
+      (richiedono di tradurre linguaggi di query diversi)
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)

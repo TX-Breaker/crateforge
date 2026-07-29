@@ -13,7 +13,13 @@ import {
   msToSamples,
   type EngineLoopSlot
 } from './engineCodec';
-import { getCuesForTrack, iterateTracks, type ExportSelection } from '../common';
+import {
+  getCuesForTrack,
+  getPlaylists,
+  getPlaylistTrackIds,
+  iterateTracks,
+  type ExportSelection
+} from '../common';
 import type BetterSqlite3 from 'better-sqlite3';
 
 /**
@@ -40,6 +46,7 @@ export interface EngineExportResult {
   tracks: number;
   cues: number;
   loops: number;
+  playlists: number;
   dbPath: string;
   warnings: string[];
 }
@@ -197,6 +204,11 @@ export function writeEngineLibrary(
   let written = 0;
   let cueCount = 0;
   let loopCount = 0;
+  let playlistCount = 0;
+  // Le playlist esistono solo se lo schema del modello le prevede.
+  const hasPlaylistTables = ddl.some((d) => /CREATE TABLE\s+"?Playlist"?\s*\(/i.test(d.sql));
+  // databaseUuid delle voci di playlist: è l'UUID della libreria.
+  const libraryUuid = String((info?.uuid as string | undefined) ?? '');
 
   try {
     for (const stmt of ddl) {
@@ -252,6 +264,9 @@ export function writeEngineLibrary(
          loops = excluded.loops`
     );
 
+    // trackId nell'UDM → id nella libreria generata, per le playlist.
+    const idMap = new Map<number, number>();
+
     const run = out.transaction(() => {
       for (const t of iterateTracks(db, sel)) {
         if (!t.path) continue;
@@ -296,6 +311,7 @@ export function writeEngineLibrary(
           streamingFlags: 0
         };
         const trackId = Number(insertTrack.run(...usable.map((c) => values[c] as never)).lastInsertRowid);
+        idMap.set(t.id, trackId);
 
         // Cue e loop: gli 8 pad di Engine.
         const sampleRate = 44100; // ricalcolata da Engine all'analisi
@@ -341,6 +357,50 @@ export function writeEngineLibrary(
         written++;
         if (written % 200 === 0) onProgress?.(written);
       }
+
+      /* Playlist: in Engine sono due liste concatenate — `nextListId` collega
+         una playlist alla successiva, `nextEntityId` un brano al successivo, e
+         lo zero segna la fine. Le scriviamo solo se le tabelle esistono in
+         questo schema, e solo per le playlist che non sono cartelle. */
+      if (!hasPlaylistTables) return;
+      const lists = getPlaylists(db, sel).filter((p) => !p.is_folder);
+      if (!lists.length) return;
+
+      const insertList = out.prepare(
+        `INSERT INTO Playlist (title, parentListId, isPersisted, nextListId, lastEditTime, isExplicitlyExported)
+         VALUES (?, 0, 1, 0, datetime('now'), 1)`
+      );
+      const insertEntity = out.prepare(
+        `INSERT INTO PlaylistEntity (listId, trackId, databaseUuid, nextEntityId, membershipReference)
+         VALUES (?, ?, ?, 0, 0)`
+      );
+      const linkList = out.prepare('UPDATE Playlist SET nextListId = ? WHERE id = ?');
+      const linkEntity = out.prepare('UPDATE PlaylistEntity SET nextEntityId = ? WHERE id = ?');
+
+      const listIds: number[] = [];
+      for (const p of lists) {
+        const trackIds = getPlaylistTrackIds(db, p.id)
+          .map((id) => idMap.get(id))
+          .filter((id): id is number => id !== undefined);
+        if (!trackIds.length) continue; // playlist vuota: niente da scrivere
+
+        const listId = Number(insertList.run(p.name).lastInsertRowid);
+        listIds.push(listId);
+
+        const entityIds: number[] = [];
+        for (const tid of trackIds) {
+          entityIds.push(Number(insertEntity.run(listId, tid, libraryUuid).lastInsertRowid));
+        }
+        // Concatena i brani nell'ordine della playlist; l'ultimo resta a 0.
+        for (let i = 0; i < entityIds.length - 1; i++) {
+          linkEntity.run(entityIds[i + 1], entityIds[i]);
+        }
+        playlistCount++;
+      }
+      // Concatena le playlist tra loro; l'ultima resta a 0.
+      for (let i = 0; i < listIds.length - 1; i++) {
+        linkList.run(listIds[i + 1], listIds[i]);
+      }
     });
     run();
   } finally {
@@ -353,5 +413,5 @@ export function writeEngineLibrary(
   warnings.push(
     'Engine ricalcola forma d\'onda e griglia dei beat alla prima analisi: apri la libreria e lascia analizzare i brani.'
   );
-  return { tracks: written, cues: cueCount, loops: loopCount, dbPath, warnings };
+  return { tracks: written, cues: cueCount, loops: loopCount, playlists: playlistCount, dbPath, warnings };
 }

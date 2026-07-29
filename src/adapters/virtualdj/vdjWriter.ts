@@ -1,7 +1,14 @@
 import { create } from 'xmlbuilder2';
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
 import type BetterSqlite3 from 'better-sqlite3';
-import { ExportSelection, getCuesForTrack, iterateTracks } from '../common';
+import {
+  ExportSelection,
+  getCuesForTrack,
+  getPlaylists,
+  getPlaylistTrackIds,
+  iterateTracks
+} from '../common';
 
 /**
  * Colore pivot "#RRGGBB" → attributo Poi@Color.
@@ -31,11 +38,13 @@ export function writeVirtualDjXml(
   outPath: string,
   sel: ExportSelection = {},
   onProgress?: (done: number) => void
-): { tracks: number; warnings: string[] } {
+): { tracks: number; playlists: number; warnings: string[] } {
   const doc = create({ version: '1.0', encoding: 'UTF-8' });
   const root = doc.ele('VirtualDJ_Database', { Version: '2024' });
 
   let count = 0;
+  // Le playlist referenziano i brani per PATH: teniamo la corrispondenza.
+  const pathById = new Map<number, string>();
   let skippedNoPath = 0;
   let memoryCues = 0;
   let hotWithoutPad = 0;
@@ -45,6 +54,7 @@ export function writeVirtualDjXml(
       skippedNoPath++;
       continue;
     }
+    pathById.set(t.id, t.path);
     const song = root.ele('Song', {
       FilePath: t.path,
       FileSize: t.filesize !== null ? String(t.filesize) : ''
@@ -120,6 +130,30 @@ export function writeVirtualDjXml(
 
   writeFileSync(outPath, doc.end({ prettyPrint: true }), 'utf-8');
 
+  /* Playlist: in VirtualDJ NON stanno nel database.xml, ma come file separati
+     `.vdjfolder` sotto una cartella "Folders". Ogni file è un
+     <VirtualFolder> con un <song path="…"/> per brano, nell'ordine. */
+  let playlistCount = 0;
+  const lists = getPlaylists(db, sel).filter((p) => !p.is_folder);
+  if (lists.length) {
+    const foldersDir = join(dirname(outPath), 'Folders');
+    mkdirSync(foldersDir, { recursive: true });
+    for (const p of lists) {
+      const paths = getPlaylistTrackIds(db, p.id)
+        .map((id) => pathById.get(id))
+        .filter((v): v is string => !!v);
+      if (!paths.length) continue;
+      const pl = create({ version: '1.0', encoding: 'UTF-8' }).ele('VirtualFolder', {
+        noDuplicates: 'no'
+      });
+      for (const songPath of paths) pl.ele('song', { path: songPath });
+      // Nome file ripulito dai caratteri che il filesystem non accetta.
+      const safe = p.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 120) || `playlist-${p.id}`;
+      writeFileSync(join(foldersDir, `${safe}.vdjfolder`), pl.end({ prettyPrint: true }), 'utf-8');
+      playlistCount++;
+    }
+  }
+
   const warnings: string[] = [];
   if (skippedNoPath > 0) {
     warnings.push(`${skippedNoPath} brani senza percorso file non esportati.`);
@@ -139,5 +173,5 @@ export function writeVirtualDjXml(
       `${loopWithoutLength} loop senza lunghezza: conservato solo il punto di inizio.`
     );
   }
-  return { tracks: count, warnings };
+  return { tracks: count, playlists: playlistCount, warnings };
 }
