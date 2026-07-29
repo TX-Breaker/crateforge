@@ -499,6 +499,33 @@ rispettata: il rischio è corrompere la libreria dell'utente.
 - **Serve prima**: un `m.db` con almeno un loop impostato, e una prova di
   apertura in Engine di una libreria generata da noi
 
+## WRITER ENGINE DJ — VALIDATO IN ENGINE REALE (29/07/2026)
+
+L'utente ha aperto in Engine DJ 5.0 una libreria generata da CrateForge e ha
+confermato: tracce caricabili, **8 hot cue e 8 loop sui pad con i colori
+giusti**, copertine presenti, analisi completata da Engine. È la prova che il
+codice non poteva darsi da solo.
+
+Il percorso fino alla conferma (tre difetti trovati proprio grazie alla prova):
+- [x] **Path relativi**: sono relativi alla cartella `Engine Library`, NON a
+      quella che la contiene. Il reader risaliva un livello di troppo → in
+      Engine tutte le tracce apparivano rosse ("unavailable"). Misurato:
+      0/114 file trovati col codice vecchio, 114/114 con quello corretto
+- [x] **Lettura da copia**: il test generava leggendo un m.db copiato in
+      cartella temporanea; essendo i path relativi alla libreria, risolvevano
+      rispetto alla temp e i percorsi riscritti erano sbagliati
+- [x] **`albumArtId = 0`** violava la foreign key su AlbumArt → nessuna traccia
+      veniva scritta
+- [x] **Copertine**: Engine le tiene come file in `Engine Library/Artwork` con
+      nome = SHA-1 dell'immagine in base64url (verificato 5/5), e in `AlbumArt`
+      ne conserva l'impronta binaria. Il writer ora le estrae dal frame ID3
+      APIC e le collega: 114 tracce → 114 copertine
+
+Non scriviamo deliberatamente: forma d'onda (`overviewWaveFormData`) e griglia
+(`beatData`). Sono blob che sappiamo leggere ma non ricreare byte per byte;
+Engine li rigenera alla prima analisi, e questo è meglio che scrivere dati
+inventati.
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)
