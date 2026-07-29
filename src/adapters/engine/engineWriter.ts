@@ -98,7 +98,15 @@ export function writeEngineLibrary(
   outDir: string,
   templateDbPath: string,
   sel: ExportSelection = {},
-  onProgress?: (done: number) => void
+  onProgress?: (done: number) => void,
+  /**
+   * Cartella rispetto a cui calcolare i path dei brani, se DIVERSA da quella
+   * in cui scriviamo. Serve quando la libreria verrà usata da un'altra
+   * posizione (una chiavetta, o la cartella Musica al posto di quella
+   * esistente): i path Engine sono relativi, quindi generarli rispetto alla
+   * cartella di staging li romperebbe a destinazione.
+   */
+  pathBase?: string
 ): EngineExportResult {
   const warnings: string[] = [];
   if (!existsSync(templateDbPath)) {
@@ -164,7 +172,7 @@ export function writeEngineLibrary(
     const run = out.transaction(() => {
       for (const t of iterateTracks(db, sel)) {
         if (!t.path) continue;
-        const rel = enginePath(t.path, outDir);
+        const rel = enginePath(t.path, pathBase ?? outDir);
         if (!rel) {
           warnings.push(`"${t.title ?? t.path}" è su un altro disco rispetto alla libreria: saltato.`);
           continue;
