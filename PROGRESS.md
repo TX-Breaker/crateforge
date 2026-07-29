@@ -436,6 +436,27 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
       così CrateForge non ripete l'errore criptico di Engine quando gli si
       punta una libreria che vive su rete
 
+## CUE REALI: LETTURA E CONVERSIONE INCROCIATA VERIFICATE (29/07/2026)
+
+L'utente ha messo a mano i cue su due tracce per programma in Engine DJ e in
+Serato, su questa macchina Windows. Risultati misurati, non stimati:
+
+- [x] **Engine DJ**: 114 tracce e **16 cue** letti dai blob `PerformanceData`
+      (2 tracce × 8 pad), importati nell'UDM senza perdite
+- [x] **Serato**: **8 cue** su una traccia, letti sia dai GEOB
+      `Serato Markers2` del file sia dal `database V2` — le due strade danno
+      lo STESSO risultato (buon segno di coerenza del reader)
+- [x] Serato ha salvato i cue di una sola delle due tracce: su 114 file solo
+      uno ha il GEOB `Serato Markers2`, e anche il database V2 ne conosce uno.
+      Non è un limite del reader: Serato scrive i punti su disco solo quando
+      scarica la traccia dal deck / alla chiusura
+- [x] **CONVERSIONE INCROCIATA SU CUE VERI — nessuna perdita:**
+      Engine 16 → Rekordbox 16 · Traktor 16 · VirtualDJ 16;
+      Serato 8 → Rekordbox 8 · Traktor 8 · VirtualDJ 8
+      (contati nel file scritto, non dal valore di ritorno)
+- [x] `tests/realCueReaders.test.ts` e `tests/realCrossConversion.test.ts`:
+      girano sui dati reali della macchina, si auto-saltano altrove
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)
