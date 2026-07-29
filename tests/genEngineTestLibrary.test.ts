@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import Database from 'better-sqlite3';
 import { migrate } from '@core/schema';
 import { importForeignLibrary } from '@core/foreignImport';
@@ -16,7 +16,11 @@ import { writeEngineLibrary } from '@adapters/engine/engineWriter';
  * Si salta sempre, tranne quando si imposta CRATEFORGE_ENGINE_OUT.
  */
 
-const ENGINE_DB = join(homedir(), 'Music', 'Engine Library', 'Database2', 'm.db');
+// Sorgente: di norma la libreria dell'utente, ma durante una prova la sua
+// posizione abituale può essere occupata dalla libreria generata — in quel caso
+// si indica esplicitamente da dove leggere.
+const ENGINE_DB =
+  process.env.CRATEFORGE_ENGINE_SRC ?? join(homedir(), 'Music', 'Engine Library', 'Database2', 'm.db');
 const OUT = process.env.CRATEFORGE_ENGINE_OUT;
 const PATH_BASE = process.env.CRATEFORGE_ENGINE_PATHBASE;
 
@@ -24,11 +28,14 @@ describe.skipIf(!OUT || !existsSync(ENGINE_DB))('genera libreria Engine di prova
   it('scrive la libreria richiesta', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'cf-genengine-'));
     try {
-      const src = join(tmp, 'm.db');
-      copyFileSync(ENGINE_DB, src);
+      // Si legge dalla POSIZIONE REALE, non da una copia: i path dei brani
+      // sono relativi alla cartella della libreria, quindi leggendo un m.db
+      // copiato altrove risolverebbero rispetto alla cartella temporanea e i
+      // percorsi riscritti sarebbero sbagliati. Il reader apre in sola
+      // lettura, quindi l'originale non viene comunque toccato.
       const udm = new Database(':memory:');
       migrate(udm);
-      importForeignLibrary(udm, readEngineLibrary(src));
+      importForeignLibrary(udm, readEngineLibrary(ENGINE_DB));
 
       const res = writeEngineLibrary(udm, OUT!, ENGINE_DB, {}, undefined, PATH_BASE);
       udm.close();
@@ -37,12 +44,27 @@ describe.skipIf(!OUT || !existsSync(ENGINE_DB))('genera libreria Engine di prova
           (PATH_BASE ? ` (path relativi a ${PATH_BASE})` : '')
       );
 
-      // Prova di lettura: i path devono puntare a file che esistono davvero.
-      const back = readEngineLibrary(res.dbPath);
-      const sample = back.tracks.slice(0, 3).map((t) => t.path);
-      console.log(`[gen] esempi di percorso risolto:`);
-      for (const p of sample) console.log(`[gen]   ${p} → ${p && existsSync(p) ? 'ESISTE' : 'MANCA'}`);
+      // Verifica dei percorsi: vanno controllati rispetto alla posizione in cui
+      // la libreria verrà USATA, non a quella in cui l'abbiamo scritta —
+      // altrimenti risultano tutti mancanti anche quando sono giusti.
+      const finalRoot = join(PATH_BASE ?? OUT!, 'Engine Library');
+      const check = new Database(res.dbPath, { readonly: true });
+      const raw = (
+        check.prepare('SELECT path FROM Track WHERE path IS NOT NULL LIMIT 3').all() as {
+          path: string;
+        }[]
+      ).map((r) => r.path);
+      check.close();
+      console.log(`[gen] percorsi scritti, risolti da ${finalRoot}:`);
+      let ok = 0;
+      for (const p of raw) {
+        const abs = resolve(finalRoot, p);
+        const esiste = existsSync(abs);
+        if (esiste) ok++;
+        console.log(`[gen]   ${esiste ? 'OK   ' : 'MANCA'} ${abs}`);
+      }
       expect(existsSync(res.dbPath)).toBe(true);
+      expect(ok).toBe(raw.length);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

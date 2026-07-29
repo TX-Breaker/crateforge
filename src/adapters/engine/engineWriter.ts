@@ -78,11 +78,11 @@ const TRACK_COLUMNS = [
 ] as const;
 
 /**
- * Path Engine: relativo alla cartella che contiene "Engine Library", con
- * separatori POSIX.
+ * Path Engine: relativo alla cartella "Engine Library" stessa (non a quella
+ * che la contiene — verificato sui dati reali), con separatori POSIX.
  *
- * I ".." sono legittimi e Engine li usa davvero (nella libreria reale di
- * riferimento i path sono del tipo "../../Desktop/…"): quello che invece NON è
+ * I ".." sono legittimi e Engine li usa davvero (nella libreria di riferimento
+ * i path sono del tipo "../../Desktop/…"): quello che invece NON è
  * rappresentabile è un brano su un ALTRO disco, perché lì `relative` non può
  * produrre un percorso relativo e restituisce un assoluto. In quel caso la
  * traccia viene saltata con un avviso, invece di scrivere un riferimento rotto.
@@ -128,6 +128,9 @@ export function writeEngineLibrary(
   );
   template.close();
 
+  // Base per i path relativi: la cartella "Engine Library" della destinazione
+  // FINALE (che può differire da dove stiamo scrivendo, vedi pathBase).
+  const pathRoot = join(pathBase ?? outDir, 'Engine Library');
   const dbDir = join(outDir, 'Engine Library', 'Database2');
   mkdirSync(dbDir, { recursive: true });
   const dbPath = join(dbDir, 'm.db');
@@ -172,7 +175,7 @@ export function writeEngineLibrary(
     const run = out.transaction(() => {
       for (const t of iterateTracks(db, sel)) {
         if (!t.path) continue;
-        const rel = enginePath(t.path, pathBase ?? outDir);
+        const rel = enginePath(t.path, pathRoot);
         if (!rel) {
           warnings.push(`"${t.title ?? t.path}" è su un altro disco rispetto alla libreria: saltato.`);
           continue;

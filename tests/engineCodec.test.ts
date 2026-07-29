@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { copyFileSync, mkdtempSync, rmSync } from 'fs';
 import Database from 'better-sqlite3';
+import { readEngineLibrary } from '@adapters/engine/engineReader';
 import {
   decodeLoops,
   decodeQuickCues,
@@ -91,6 +92,24 @@ describe('codec Engine (sintetico)', () => {
 });
 
 const ENGINE_DB = join(homedir(), 'Music', 'Engine Library', 'Database2', 'm.db');
+
+describe.skipIf(!existsSync(ENGINE_DB))('percorsi dei brani nella libreria Engine', () => {
+  it('risolve i path relativi su file che esistono davvero', () => {
+    // Regressione: i path Engine sono relativi alla cartella "Engine Library",
+    // non a quella che la contiene. Risalendo un livello di troppo, in Engine
+    // TUTTE le tracce risultano "unavailable" (rosse) e non si caricano.
+    const lib = readEngineLibrary(ENGINE_DB);
+    const withPath = lib.tracks.filter((t) => t.path);
+    const found = withPath.filter((t) => existsSync(t.path!));
+    console.log(`[path] ${found.length}/${withPath.length} percorsi risolvono su file esistenti`);
+    if (found.length < withPath.length) {
+      const miss = withPath.find((t) => !existsSync(t.path!));
+      console.log(`[path] esempio non risolto: ${miss?.path}`);
+    }
+    // Sulla libreria reale i file ci sono: se non li troviamo, la base è sbagliata.
+    expect(found.length).toBeGreaterThan(withPath.length * 0.9);
+  });
+});
 
 describe.skipIf(!existsSync(ENGINE_DB))('codec Engine contro la libreria reale', () => {
   it('ri-codifica ogni blob reale ottenendo gli stessi byte', () => {
