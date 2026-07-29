@@ -403,6 +403,39 @@ aperto. Quindi ABILITATA come opt-in consapevole, non più vietata a priori.
 - [ ] Traktor SMARTLIST: oggi solo contate e (ora) dichiarate; la conversione
       richiede il parsing del linguaggio di query NML
 
+## TEST SU DATI REALI + DIAGNOSI RETE (29/07/2026, macchina Windows)
+
+### Relocator provato sul caso reale dell'utente
+- [x] Libreria Rekordbox Windows (DIVERSA da quella del Mac): 134 brani =
+      114 beat + 20 sample FX del Sampler. I 114 beat erano stati spostati da
+      `Desktop\BEATS\BEAT\` a `Desktop\CREATION MUSIQUE\BEATS\{BEAT HARD,BEAT SOFT}`
+- [x] **Relocator: 114/114 ricollegati, 0 ambigui, 0 non trovati.** XML di
+      rilocazione generato e consegnato all'utente (master.db mai toccato, §3)
+- [x] `tests/realRelocator.test.ts` e `tests/realLibraryRoundTrip.test.ts`
+      girano sui dati reali di questa macchina e si auto-saltano altrove,
+      così la CI resta verde
+- [x] Export su libreria reale: 134/134 verso Rekordbox XML, Traktor NML e
+      VirtualDJ XML; re-import 134→134, nessuna perdita di brani
+
+### Matrice di conversione (fixture con cue di ogni tipo)
+- [x] `tests/conversionMatrix.test.ts`: hot su pad, hot senza pad, memory e
+      loop attraversano le rotte scrivibili; posizioni fedeli al millisecondo;
+      colore conservato; ciò che si trasforma viene DICHIARATO nei warning
+
+### Engine DJ non parte: causa trovata e misurata
+- [x] La cartella Musica di Windows è redirezionata su `I:`, che è un'**unità
+      di rete** (NAS `\\Nas-vale\16tera`). Engine DJ ci crea
+      `Engine Library\Database2`, lascia due file-sonda vuoti e poi fallisce
+      con "Your Music folder can't be accessed... write permissions enabled"
+- [x] Causa REALE misurata, non ipotizzata: scrivere file normali sul NAS
+      funziona, ma **SQLite non riesce nemmeno ad aprire un database** lì
+      (`unable to open database file`). I lock SQLite non sono affidabili su
+      SMB: non è un problema di permessi, è il protocollo
+- [x] `src/main/networkPath.ts`: riconosce percorsi UNC e unità mappate
+      (chiave `HKCU\Network`, cache 30s) e produce un avviso comprensibile —
+      così CrateForge non ripete l'errore criptico di Engine quando gli si
+      punta una libreria che vive su rete
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)
