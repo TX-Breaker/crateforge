@@ -147,8 +147,10 @@ const LOCATIONS: Record<TargetOs, LibraryLocation[]> = {
     },
     {
       software: 'virtualdj',
+      // VERIFICATO installando VirtualDJ 2026 (b9482) su questa macchina:
+      // la cartella dati è in LOCAL AppData, non in Roaming.
       label: 'VirtualDJ — database.xml',
-      path: '%APPDATA%\\VirtualDJ\\database.xml',
+      path: '%LOCALAPPDATA%\\VirtualDJ\\database.xml',
       pick: 'file',
       note: 'VirtualDJ tiene un database.xml anche sulla radice di ogni disco usato.'
     },

@@ -58,7 +58,7 @@ describe('percorsi librerie DJ', () => {
 
   it('usa variabili d\'ambiente Windows e tilde su macOS, senza contaminarsi', () => {
     for (const l of libraryLocations('win')) {
-      expect(l.path).toMatch(/^%(APPDATA|USERPROFILE)%\\/);
+      expect(l.path).toMatch(/^%(APPDATA|LOCALAPPDATA|USERPROFILE)%\\/);
       expect(l.path).not.toContain('~/');
     }
     for (const l of libraryLocations('mac')) {
@@ -75,6 +75,14 @@ describe('percorsi librerie DJ', () => {
     expect(mac.path).toBe('~/Library/Pioneer/rekordbox/master.db');
     expect(win.pick).toBe('file');
     expect(mac.pick).toBe('file');
+  });
+
+  it('VirtualDJ su Windows sta in LOCALAPPDATA, non in Roaming', () => {
+    // Verificato installando VirtualDJ 2026 su Windows: la cartella dati è
+    // %LOCALAPPDATA%\VirtualDJ. Indicare Roaming mandava l'utente a cercare
+    // un file che non esiste.
+    expect(libraryLocations('win', 'virtualdj')[0].path).toContain('%LOCALAPPDATA%');
+    expect(libraryLocations('mac', 'virtualdj')[0].path).toContain('Application Support');
   });
 
   it('la cartella _Serato_ è indicata come cartella, non come file', () => {
