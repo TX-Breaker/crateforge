@@ -464,6 +464,96 @@ export function registerIpc(db: BetterSqlite3.Database, udmPath: string): () => 
     return r;
   });
 
+  /**
+   * Export verso SERATO: gli hot cue non stanno in un file di libreria da
+   * importare, ma nei tag GEOB dei FILE AUDIO stessi. È quindi una scrittura
+   * sugli originali e passa dal gate delle scritture dirette, con backup +
+   * hash + rollback nel sidecar.
+   *
+   * Il writer preserva byte-per-byte le entry che non interpretiamo (colore
+   * traccia, BPM lock, flip…): verificato su un file taggato da Serato reale,
+   * il GEOB riscritto torna IDENTICO all'originale.
+   */
+  ipcMain.handle('export:seratoCues', async (_e, sel?: { playlistIds?: number[] }) => {
+    if (getSetting(db, 'directWrites') !== '1') {
+      throw new Error(
+        'Serato salva i cue dentro i file audio: serve attivare le scritture dirette in Impostazioni → Esperto.'
+      );
+    }
+    const check = checkSidecar();
+    if (!check.available) {
+      return { ok: false, message: 'Modulo sidecar non disponibile.' };
+    }
+
+    // Un job per file, con i soli hot cue entro gli 8 pad di Serato.
+    const where =
+      sel?.playlistIds && sel.playlistIds.length
+        ? `AND t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id IN (${sel.playlistIds
+            .map(() => '?')
+            .join(',')}))`
+        : '';
+    const params = sel?.playlistIds && sel.playlistIds.length ? sel.playlistIds : [];
+    const rows = db
+      .prepare(
+        `SELECT t.path, c.cue_index, c.position_ms, c.color, c.label
+         FROM cues c JOIN tracks t ON t.id = c.track_id
+         WHERE t.path IS NOT NULL AND c.cue_type = 'hot'
+           AND c.cue_index IS NOT NULL AND c.cue_index BETWEEN 0 AND 7 ${where}
+         ORDER BY t.path, c.cue_index`
+      )
+      .all(...params) as {
+      path: string;
+      cue_index: number;
+      position_ms: number;
+      color: string | null;
+      label: string | null;
+    }[];
+
+    const byPath = new Map<string, { index: number; positionMs: number; color: string | null; label: string | null }[]>();
+    for (const r of rows) {
+      const list = byPath.get(r.path) ?? [];
+      list.push({
+        index: r.cue_index,
+        positionMs: Math.round(r.position_ms),
+        color: r.color,
+        label: r.label
+      });
+      byPath.set(r.path, list);
+    }
+    const jobs = [...byPath.entries()].map(([path, cues]) => ({ path, cues }));
+    if (!jobs.length) {
+      return { ok: false, message: 'Nessun hot cue da scrivere (Serato usa 8 pad per brano).' };
+    }
+
+    const backupDir = join(
+      app.getPath('userData'),
+      'backups',
+      `serato-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
+    );
+    const cuesFile = writeTempJson('serato-cues', jobs);
+    let r;
+    try {
+      r = await runSidecarJob('write-serato-cues', 'write-serato', [
+        '--cues-file',
+        cuesFile,
+        '--backup-dir',
+        backupDir
+      ]);
+    } finally {
+      rmSync(cuesFile, { force: true });
+    }
+    logOperation(
+      db,
+      'export.serato-cues',
+      backupDir,
+      r.ok ? 'ok' : 'error',
+      r.ok ? JSON.stringify(r.data) : r.message
+    );
+    return r.ok
+      ? { ok: true, ...r.data, files: jobs.length, backupDir }
+      : { ok: false, message: r.message };
+  });
+
   // ---- relocator ----
   ipcMain.handle('relocator:findBroken', () => {
     const broken = findBrokenTracks(db);

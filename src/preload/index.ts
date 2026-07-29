@@ -56,7 +56,18 @@ const api = {
     traktorNml: (outPath: string, sel?: unknown) =>
       ipcRenderer.invoke('export:traktorNml', outPath, sel),
     virtualdjXml: (outPath: string, sel?: unknown) =>
-      ipcRenderer.invoke('export:virtualdjXml', outPath, sel)
+      ipcRenderer.invoke('export:virtualdjXml', outPath, sel),
+    // Serato: i cue vivono nei tag dei file audio, non in un file di libreria.
+    // Richiede il gate delle scritture dirette; backup+rollback nel sidecar.
+    seratoCues: (sel?: { playlistIds?: number[] }) =>
+      ipcRenderer.invoke('export:seratoCues', sel) as Promise<{
+        ok: boolean;
+        written?: number;
+        failed?: number;
+        files?: number;
+        backupDir?: string;
+        message?: string;
+      }>
   },
   relocator: {
     findBroken: () => ipcRenderer.invoke('relocator:findBroken'),

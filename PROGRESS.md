@@ -457,6 +457,48 @@ Serato, su questa macchina Windows. Risultati misurati, non stimati:
 - [x] `tests/realCueReaders.test.ts` e `tests/realCrossConversion.test.ts`:
       girano sui dati reali della macchina, si auto-saltano altrove
 
+## WRITER SERATO: FATTO. WRITER ENGINE: FERMATO CONSAPEVOLMENTE (29/07/2026)
+
+Specifiche ricavate MISURANDO i dati reali di questa macchina (copie, originali
+mai toccati), con verifica avversariale indipendente.
+
+### Serato — writer IMPLEMENTATO e verificato
+- [x] Formato `Serato Markers2` misurato byte-per-byte sul file taggato
+      dall'utente: envelope `01 01` + base64 **con padding `=` conservato**,
+      newline ogni 72 char, coda di NUL fino alla dimensione del frame.
+      Entry: `nome NUL` + `uint32 BE len` + payload. CUE = 13 byte
+      (`00 | index | uint32 BE posizione ms | 00 | RGB | 00 00` + label)
+- [x] **Round-trip byte-identico dimostrato**: riscrivendo gli stessi cue il
+      GEOB torna identico all'originale (470 → 470 byte, zero differenze).
+      È il criterio che rende sicuro il writer
+- [x] `write-serato-cues` nel sidecar: per ogni file hash → backup verificato
+      → scrittura → rilettura di verifica → rollback su qualunque errore
+- [x] **Preserva tutto ciò che non interpretiamo**: COLOR, BPMLOCK, LOOP, FLIP
+      e qualsiasi entry futura vengono rimesse identiche; sostituiamo solo i CUE
+- [x] **Si ferma invece di distruggere**: se il blob contiene byte non
+      riconosciuti (versione di Serato più recente) la scrittura viene annullata
+- [x] IPC `export:seratoCues` dietro il gate delle scritture dirette (i cue
+      Serato vivono nei file audio, non in un file di libreria)
+- [x] Segnalato il `Serato Markers_` legacy (v1, max 5 cue): resta intatto
+      perché Serato usa Markers2 come fonte autoritativa
+
+### Engine DJ — writer NON implementato, per scelta
+La verifica avversariale ha dato **esito negativo** e la decisione è stata
+rispettata: il rischio è corrompere la libreria dell'utente.
+- Il payload `quickCues` è **completamente compreso** (round-trip semantico
+  114/114, zero byte inspiegati; prefisso uint32 BE = lunghezza decompressa;
+  posizioni in SAMPLE double BE; trailer di 17 byte col main cue)
+- Ma: **`loops`** ha un solo payload distinto in tutta la libreria (tutti gli
+  slot vuoti) → il layout di un loop pieno non è verificabile, e scriverci
+  sopra cancellerebbe i loop dell'utente
+- **`trackData`** non è chiuso: 24 byte su 68 restano inspiegati e il campo
+  "key" non corrisponde a `Track.key` (9 vs 17 sulla stessa traccia)
+- Gli int64 di Engine passerebbero da `Number` JS, che ne altera il valore
+  (misurato su `currentPlayedIndiciator`)
+- Nessuna validazione possibile contro Engine DJ reale senza un test manuale
+- **Serve prima**: un `m.db` con almeno un loop impostato, e una prova di
+  apertura in Engine di una libreria generata da noi
+
 ## Regole inderogabili (§3) — verifica rapida a ogni checkpoint
 1. Mai scrivere su originali ✔ (backup/export/quarantena: solo copie o move reversibile)
 2. Backup DB+options.json prima di output importabili ✔ (eseguito per primo nel piano)

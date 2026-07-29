@@ -1236,6 +1236,255 @@ def _serato_import_one(udm, MutagenFile, abs_path, source_id, meta) -> int:
     return n
 
 
+def _serato_split_entries(body: bytes) -> list[tuple[str, bytes]]:
+    """Corpo decodificato di 'Serato Markers2' → [(nome_entry, payload)].
+
+    Conserva TUTTE le entry, comprese quelle che non sappiamo interpretare
+    (COLOR, BPMLOCK, FLIP, e qualunque cosa Serato aggiunga in futuro): è ciò
+    che rende sicura la riscrittura, perché quello che non capiamo lo
+    rimettiamo identico invece di buttarlo.
+    """
+    import struct as _s
+
+    out: list[tuple[str, bytes]] = []
+    i = 2  # i primi 2 byte sono la versione del corpo (01 01)
+    n = len(body)
+    while i < n:
+        j = body.find(b"\x00", i)
+        if j < 0:
+            break
+        name = body[i:j].decode("latin-1")
+        if j + 5 > n:
+            break
+        ln = _s.unpack(">I", body[j + 5 - 4 : j + 5])[0]
+        payload = body[j + 5 : j + 5 + ln]
+        if len(payload) < ln:  # troncato: meglio fermarsi che inventare
+            break
+        out.append((name, payload))
+        i = j + 5 + ln
+    # Byte non consumati = struttura che non conosciamo. Chi riscrive DEVE
+    # accorgersene: restituiamo anche quanto abbiamo letto davvero.
+    _serato_split_entries.last_consumed = i  # type: ignore[attr-defined]
+    return out
+
+
+def _serato_build_markers2(version: bytes, entries: list[tuple[str, bytes]], total_size: int | None) -> bytes:
+    """Ricostruisce il GEOB 'Serato Markers2' completo di envelope.
+
+    Struttura verificata byte-per-byte su un file taggato da Serato reale
+    (round-trip identico): 2 byte versione + base64 del corpo, con il PADDING
+    '=' mantenuto e una newline ogni 72 caratteri, poi NUL fino alla fine del
+    frame. Se `total_size` è noto e sufficiente, replichiamo la dimensione
+    originale del frame (Serato lascia una coda di NUL); altrimenti chiudiamo
+    con un solo NUL.
+    """
+    import base64
+    import struct as _s
+
+    body = version + b"".join(
+        name.encode("latin-1") + b"\x00" + _s.pack(">I", len(payload)) + payload
+        for name, payload in entries
+    )
+    enc = base64.b64encode(body)  # il padding '=' va CONSERVATO
+    lines = [enc[i : i + 72] for i in range(0, len(enc), 72)]
+    b64 = b"\n".join(lines)
+    head = version[:2] if len(version) >= 2 else b"\x01\x01"
+    if total_size is not None and total_size >= len(head) + len(b64) + 1:
+        return head + b64 + b"\x00" * (total_size - len(head) - len(b64))
+    return head + b64 + b"\x00"
+
+
+def _serato_cue_entry(index: int, position_ms: int, color: str | None, label: str | None) -> bytes:
+    """Entry CUE nel formato Serato (13 byte + eventuale etichetta).
+
+    Layout verificato sui dati reali:
+      [0]=00, [1]=index, [2:6]=posizione uint32 BE in ms, [6]=00,
+      [7:10]=colore RGB, [10:12]=00 00, [12:]=nome NUL-terminated.
+    """
+    import struct as _s
+
+    rgb = b"\x00\x00\x00"
+    if color and len(color) == 7 and color[0] == "#":
+        try:
+            rgb = bytes.fromhex(color[1:])
+        except ValueError:
+            rgb = b"\x00\x00\x00"
+    name = (label or "").encode("utf-8")
+    return (
+        b"\x00"
+        + bytes([index & 0xFF])
+        + _s.pack(">I", max(0, int(position_ms)))
+        + b"\x00"
+        + rgb
+        + b"\x00\x00"
+        + name
+        + b"\x00"
+    )
+
+
+def cmd_write_serato_cues(args: argparse.Namespace) -> None:
+    """Scrive gli hot cue nei tag GEOB 'Serato Markers2' dei file audio.
+
+    Sicurezza (§3.4), per OGNI file: hash dell'originale → backup verificato
+    con hash → scrittura → riapertura di verifica → in caso di qualunque
+    errore, ripristino dal backup e verifica dell'hash ripristinato.
+
+    Le entry che non sappiamo interpretare (COLOR traccia, BPMLOCK, FLIP…)
+    vengono RIMESSE IDENTICHE: sostituiamo solo CUE e LOOP. Senza questa
+    accortezza un writer "inverso del reader" cancellerebbe dati che il
+    reader ignora.
+    """
+    try:
+        import mutagen
+        from mutagen.id3 import GEOB
+    except ImportError:
+        fail("mutagen non disponibile nel sidecar: rebuild richiesto.")
+        return
+    import shutil
+
+    try:
+        jobs = _load_json_payload(args.cues_json, getattr(args, "cues_file", None))
+        assert isinstance(jobs, list)
+    except (json.JSONDecodeError, AssertionError, OSError):
+        fail("--cues-json non valido: atteso un array [{path, cues:[{index,positionMs,color,label}]}].")
+        return
+    os.makedirs(args.backup_dir, exist_ok=True)
+
+    progress = ThrottledProgress("write-serato")
+    results: list[dict] = []
+    for i, job in enumerate(jobs):
+        path = job.get("path")
+        cues = job.get("cues") or []
+        entry = {
+            "path": path, "ok": False, "rolledBack": False, "cues": 0,
+            "preserved": 0, "skippedPads": 0, "legacyV1": False, "error": None,
+        }
+        backup = None
+        try:
+            if not path or not os.path.exists(path):
+                raise FileNotFoundError("file non trovato")
+            src_hash = _sha256(path)
+            backup = os.path.join(args.backup_dir, f"{i:04d}_{os.path.basename(path)}")
+            shutil.copy2(path, backup)
+            if _sha256(backup) != src_hash:
+                raise IOError("verifica hash del backup fallita")
+
+            audio = mutagen.File(path)
+            if audio is None or not hasattr(audio, "tags") or audio.tags is None:
+                raise ValueError("il file non ha tag ID3 leggibili")
+
+            # Entry esistenti: le conserviamo tutte tranne CUE/LOOP, che
+            # sostituiamo con quelle richieste.
+            old_key = None
+            version = b"\x01\x01"
+            total_size = None
+            preserved: list[tuple[str, bytes]] = []
+            for k in list(audio.tags.keys()):
+                fr = audio.tags[k]
+                if str(k).startswith("GEOB") and getattr(fr, "desc", "") == "Serato Markers2":
+                    old_key = k
+                    raw = bytes(fr.data)
+                    total_size = len(raw)
+                    version = raw[:2]
+                    b64 = raw[2:].replace(b"\n", b"").split(b"\x00")[0]
+                    b64 += b"=" * (-len(b64) % 4)
+                    try:
+                        import base64 as _b64
+                        body = _b64.b64decode(b64)
+                        parsed = _serato_split_entries(body)
+                    except Exception:
+                        # GEOB illeggibile: non lo sovrascriviamo alla cieca.
+                        raise ValueError("GEOB 'Serato Markers2' esistente non decodificabile")
+                    # Se restano byte che non abbiamo saputo leggere, il blob ha
+                    # una struttura che non conosciamo (versione futura di
+                    # Serato): riscriverlo cancellerebbe quei dati. Meglio
+                    # fermarsi che perdere informazioni dell'utente.
+                    consumed = getattr(_serato_split_entries, "last_consumed", len(body))
+                    if consumed < len(body):
+                        raise ValueError(
+                            f"il GEOB contiene {len(body) - consumed} byte non riconosciuti "
+                            "(versione di Serato più recente): scrittura annullata per non perderli"
+                        )
+                    # Conserviamo TUTTO tranne i CUE, che stiamo sostituendo.
+                    # I LOOP restano com'erano: qui scriviamo solo gli hot cue,
+                    # e cancellare i loop dell'utente sarebbe una perdita muta.
+                    for name, payload in parsed:
+                        if name != "CUE":
+                            preserved.append((name, payload))
+                    break
+
+            # Ordine osservato nei file scritti da Serato: COLOR, poi i CUE
+            # per indice crescente, poi il resto (LOOP, BPMLOCK, FLIP…).
+            new_entries: list[tuple[str, bytes]] = []
+            for name, payload in preserved:
+                if name == "COLOR":
+                    new_entries.append((name, payload))
+            skipped_pads = 0
+            for c in sorted(cues, key=lambda x: x.get("index") or 0):
+                idx = c.get("index")
+                if idx is None or int(idx) < 0 or int(idx) > 7:
+                    skipped_pads += 1  # Serato ha 8 pad: oltre non è scrivibile
+                    continue
+                new_entries.append(
+                    ("CUE", _serato_cue_entry(int(idx), c.get("positionMs") or 0, c.get("color"), c.get("label")))
+                )
+            for name, payload in preserved:
+                if name != "COLOR":
+                    new_entries.append((name, payload))
+            entry["skippedPads"] = skipped_pads
+
+            blob = _serato_build_markers2(version, new_entries, total_size)
+            if old_key is not None:
+                del audio.tags[old_key]
+            audio.tags.add(GEOB(encoding=0, mime="application/octet-stream", desc="Serato Markers2", data=blob))
+            audio.save()
+
+            # Riapertura di verifica: il file deve restare leggibile E i cue
+            # devono rileggersi con lo stesso parser che usa l'import.
+            check = mutagen.File(path)
+            if check is None:
+                raise IOError("il file non è più leggibile dopo la scrittura")
+            reread = 0
+            for k in list(getattr(check, "tags", {}) or {}):
+                fr = check.tags[k]
+                if str(k).startswith("GEOB") and getattr(fr, "desc", "") == "Serato Markers2":
+                    reread = len(parse_serato_markers2(bytes(fr.data)))
+            if reread < len([c for c in cues if c.get("index") is not None and 0 <= int(c["index"]) <= 7]):
+                raise IOError(f"verifica fallita: riletti {reread} cue")
+            entry["ok"] = True
+            entry["cues"] = reread
+            entry["preserved"] = len(preserved)
+            # 'Serato Markers_' è il formato v1 legacy (max 5 cue, troncato):
+            # Serato moderno usa Markers2 come fonte autoritativa, quindi lo
+            # lasciamo intatto invece di riscriverlo con una spec non
+            # verificata — ma lo segnaliamo, perché resta disallineato.
+            entry["legacyV1"] = any(
+                str(k).startswith("GEOB") and getattr(check.tags[k], "desc", "") == "Serato Markers_"
+                for k in list(getattr(check, "tags", {}) or {})
+            )
+        except Exception as exc:
+            entry["error"] = str(exc)[:300]
+            if backup and os.path.exists(backup):
+                try:
+                    shutil.copy2(backup, path)
+                    entry["rolledBack"] = _sha256(path) == _sha256(backup)
+                except Exception:
+                    entry["rolledBack"] = False
+        results.append(entry)
+        progress.update(i + 1, len(jobs))
+    progress.finish(len(jobs), len(jobs))
+    ok = sum(1 for r in results if r["ok"])
+    emit({
+        "type": "done",
+        "data": {
+            "written": ok,
+            "failed": len(results) - ok,
+            "backupDir": args.backup_dir,
+            "results": results[:200],
+        },
+    })
+
+
 def cmd_read_serato(args: argparse.Namespace) -> None:
     try:
         from mutagen import File as MutagenFile
@@ -1547,6 +1796,13 @@ def main() -> None:
     p_ser.add_argument("--udm-path", required=True)
     p_ser.add_argument("--serato-dir", required=True)
 
+    # Scrittura dei cue nei tag GEOB dei file audio (§3.4: backup + rollback).
+    p_ws = sub.add_parser("write-serato-cues")
+    p_ws.add_argument("--udm-path", required=True)
+    p_ws.add_argument("--cues-json", required=False)
+    p_ws.add_argument("--cues-file", required=False)
+    p_ws.add_argument("--backup-dir", required=True)
+
     p_rh = sub.add_parser("read-history")
     p_rh.add_argument("--udm-path", required=True)
     p_rh.add_argument("--master-db", required=True)
@@ -1584,6 +1840,8 @@ def main() -> None:
         cmd_ensure_key(args)
     elif args.command == "read-serato":
         cmd_read_serato(args)
+    elif args.command == "write-serato-cues":
+        cmd_write_serato_cues(args)
     elif args.command == "read-history":
         cmd_read_history(args)
     elif args.command == "masterdb-create-playlist":
