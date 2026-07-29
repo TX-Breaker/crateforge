@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
-import { existsSync, mkdirSync } from 'fs';
+import { createHash } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, relative, sep } from 'path';
 import {
   defaultTrailer,
@@ -93,6 +94,59 @@ function enginePath(trackPath: string, libraryRoot: string): string | null {
   return rel.split(sep).join('/');
 }
 
+/**
+ * Copertina incorporata nel file (frame ID3 APIC) → immagine grezza.
+ *
+ * Lettura minimale del tag ID3v2 senza dipendenze: cerchiamo il primo frame
+ * APIC e ne estraiamo i byte dell'immagine. Serve solo per l'export verso
+ * Engine, che tiene le copertine come file separati: se qualcosa non torna
+ * restituiamo null e la traccia resta semplicemente senza cover.
+ */
+function readEmbeddedArtwork(filePath: string): Buffer | null {
+  let buf: Buffer;
+  try {
+    buf = readFileSync(filePath);
+  } catch {
+    return null;
+  }
+  if (buf.length < 10 || buf.toString('latin1', 0, 3) !== 'ID3') return null;
+  const major = buf[3];
+  // Dimensione del tag: 4 byte "sincsafe" (7 bit utili ciascuno).
+  const tagSize = ((buf[6] & 0x7f) << 21) | ((buf[7] & 0x7f) << 14) | ((buf[8] & 0x7f) << 7) | (buf[9] & 0x7f);
+  let off = 10;
+  const end = Math.min(10 + tagSize, buf.length);
+  while (off + 10 <= end) {
+    const id = buf.toString('latin1', off, off + 4);
+    if (!/^[A-Z0-9]{4}$/.test(id)) break; // padding o fine dei frame
+    const size =
+      major >= 4
+        ? ((buf[off + 4] & 0x7f) << 21) |
+          ((buf[off + 5] & 0x7f) << 14) |
+          ((buf[off + 6] & 0x7f) << 7) |
+          (buf[off + 7] & 0x7f)
+        : buf.readUInt32BE(off + 4);
+    const body = off + 10;
+    if (size <= 0 || body + size > end) break;
+    if (id === 'APIC') {
+      let p = body;
+      p += 1; // byte di encoding del testo
+      // MIME type, terminato da NUL
+      const mimeEnd = buf.indexOf(0, p);
+      if (mimeEnd < 0 || mimeEnd >= body + size) return null;
+      p = mimeEnd + 1;
+      p += 1; // tipo di immagine (copertina frontale, retro…)
+      // Descrizione, anch'essa terminata da NUL
+      const descEnd = buf.indexOf(0, p);
+      if (descEnd < 0 || descEnd >= body + size) return null;
+      p = descEnd + 1;
+      const img = buf.subarray(p, body + size);
+      return img.length > 0 ? img : null;
+    }
+    off = body + size;
+  }
+  return null;
+}
+
 export function writeEngineLibrary(
   db: BetterSqlite3.Database,
   outDir: string,
@@ -163,6 +217,32 @@ export function writeEngineLibrary(
     const insertTrack = out.prepare(
       `INSERT INTO Track (${usable.join(',')}) VALUES (${usable.map(() => '?').join(',')})`
     );
+    /* Copertine: Engine le tiene come file in "Engine Library/Artwork" e nel
+       database ne conserva solo l'impronta. Verificato sui dati reali: il nome
+       del file è lo SHA-1 dell'immagine in base64url (senza padding), e la
+       colonna AlbumArt.hash contiene gli stessi 20 byte in forma binaria. */
+    const artDir = join(outDir, 'Engine Library', 'Artwork');
+    mkdirSync(artDir, { recursive: true });
+    const insertArt = out.prepare('INSERT INTO AlbumArt (hash, albumArt) VALUES (?, NULL)');
+    const artIdByHash = new Map<string, number>();
+    const artworkFor = (trackPath: string): number | null => {
+      const img = readEmbeddedArtwork(trackPath);
+      if (!img) return null;
+      const sha1 = createHash('sha1').update(img).digest();
+      const key = sha1.toString('hex');
+      const known = artIdByHash.get(key);
+      if (known !== undefined) return known; // copertina già vista: si riusa
+      const name = sha1.toString('base64url').replace(/=+$/, '');
+      try {
+        writeFileSync(join(artDir, `${name}.jpg`), img);
+      } catch {
+        return null;
+      }
+      const id = Number(insertArt.run(sha1).lastInsertRowid);
+      artIdByHash.set(key, id);
+      return id;
+    };
+
     const insertPerf = out.prepare(
       `INSERT INTO PerformanceData (trackId, trackData, quickCues, loops)
        VALUES (?, ?, ?, ?)
@@ -190,10 +270,9 @@ export function writeEngineLibrary(
           filename,
           bitrate: null,
           bpmAnalyzed: t.bpm,
-          // NULL e non 0: albumArtId ha una foreign key su AlbumArt(id) e lo
-          // zero non corrisponde ad alcuna riga. La copertina la rigenera
-          // Engine dai tag del file.
-          albumArtId: null,
+          // Copertina estratta dal file e registrata in AlbumArt; null se il
+          // brano non ne ha una (mai 0: c'è una foreign key su AlbumArt.id).
+          albumArtId: artworkFor(t.path),
           fileBytes: t.filesize,
           title: t.title,
           artist: t.artist,
