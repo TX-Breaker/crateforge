@@ -119,6 +119,13 @@ export const pages: Record<Locale, PageDict> = {
         'I file NON vengono eliminati e potrai ripristinarli. Se alcuni servono ad altri programmi, escludili prima dalla selezione.'
     },
     converter: {
+      seratoExportDesc: 'Serato tiene i punti dentro i file audio, non in un file di libreria: scrivendo qui si modificano i tuoi MP3 (con backup verificato e ripristino automatico in caso di problemi). Si esportano gli 8 hot cue per brano; i loop già presenti restano intatti.',
+      seratoExportBtn: 'Scrivi i cue nei file',
+      seratoOutDone: 'Scritti i cue in {files} file ({n} riusciti). Backup in {dir}.',
+      seratoFailed: '{n} file non modificati: sono stati ripristinati dal backup.',
+      engineExportDesc: 'Engine legge una cartella "Engine Library": ne generiamo una NUOVA dove scegli tu, senza toccare la tua. Ti verrà chiesto anche un m.db esistente, che serve come modello dello schema. Forma d\'onda e griglia le ricalcola Engine alla prima analisi.',
+      engineExportBtn: 'Genera libreria Engine',
+      engineOutDone: 'Libreria Engine creata: {n} brani, {cues} cue, {loops} loop in {path}.',
       warnHeader: 'Cosa non è passato nella conversione:',
       title: 'Converti libreria',
       subtitle: 'Esporta la libreria verso altri software DJ. Sempre su file nuovi: gli originali non vengono toccati.',
@@ -658,6 +665,13 @@ export const pages: Record<Locale, PageDict> = {
         'Files are NOT deleted and can be restored. If other programs need some of them, exclude them from the selection first.'
     },
     converter: {
+      seratoExportDesc: 'Serato stores cue points inside the audio files, not in a library file: writing here modifies your MP3s (with a verified backup and automatic rollback if anything fails). The 8 hot cues per track are exported; existing loops are left untouched.',
+      seratoExportBtn: 'Write cues into files',
+      seratoOutDone: 'Cues written into {files} files ({n} succeeded). Backup in {dir}.',
+      seratoFailed: '{n} files left unchanged: they were restored from the backup.',
+      engineExportDesc: 'Engine reads an "Engine Library" folder: we generate a NEW one where you choose, without touching yours. You will also be asked for an existing m.db, used as the schema template. Waveform and beat grid are recomputed by Engine on first analysis.',
+      engineExportBtn: 'Generate Engine library',
+      engineOutDone: 'Engine library created: {n} tracks, {cues} cues, {loops} loops in {path}.',
       warnHeader: 'What did not carry over in the conversion:',
       title: 'Convert library',
       subtitle: 'Exports your library to other DJ software. Always into new files: originals are never touched.',
@@ -1197,6 +1211,13 @@ export const pages: Record<Locale, PageDict> = {
         "Les fichiers ne sont PAS supprimés et pourront être restaurés. Si d'autres programmes en ont besoin, excluez-les d'abord de la sélection."
     },
     converter: {
+      seratoExportDesc: 'Serato garde les points de repère dans les fichiers audio, pas dans un fichier de bibliothèque : écrire ici modifie vos MP3 (avec sauvegarde vérifiée et restauration automatique en cas de problème). Les 8 hot cues par titre sont exportés ; les boucles existantes restent intactes.',
+      seratoExportBtn: 'Écrire les cues dans les fichiers',
+      seratoOutDone: 'Cues écrits dans {files} fichiers ({n} réussis). Sauvegarde dans {dir}.',
+      seratoFailed: '{n} fichiers inchangés : ils ont été restaurés depuis la sauvegarde.',
+      engineExportDesc: 'Engine lit un dossier « Engine Library » : nous en générons un NOUVEAU là où vous voulez, sans toucher au vôtre. Un m.db existant vous sera demandé comme modèle de schéma. La forme d\'onde et la grille sont recalculées par Engine à la première analyse.',
+      engineExportBtn: 'Générer la bibliothèque Engine',
+      engineOutDone: 'Bibliothèque Engine créée : {n} titres, {cues} cues, {loops} boucles dans {path}.',
       warnHeader: 'Ce qui n\'a pas été transféré lors de la conversion :',
       title: 'Convertir la bibliothèque',
       subtitle: "Exporte la bibliothèque vers d'autres logiciels DJ. Toujours dans de nouveaux fichiers : les originaux ne sont jamais touchés.",
@@ -1736,6 +1757,13 @@ export const pages: Record<Locale, PageDict> = {
         'Die Dateien werden NICHT gelöscht und können wiederhergestellt werden. Falls andere Programme einige davon brauchen, nimm sie vorher aus der Auswahl.'
     },
     converter: {
+      seratoExportDesc: 'Serato speichert die Cue-Punkte in den Audiodateien, nicht in einer Bibliotheksdatei: Schreiben verändert also deine MP3s (mit geprüftem Backup und automatischer Wiederherstellung im Fehlerfall). Exportiert werden die 8 Hot Cues pro Titel; vorhandene Loops bleiben unangetastet.',
+      seratoExportBtn: 'Cues in die Dateien schreiben',
+      seratoOutDone: 'Cues in {files} Dateien geschrieben ({n} erfolgreich). Backup in {dir}.',
+      seratoFailed: '{n} Dateien unverändert: sie wurden aus dem Backup wiederhergestellt.',
+      engineExportDesc: 'Engine liest einen Ordner „Engine Library": Wir erzeugen einen NEUEN an einem Ort deiner Wahl, ohne deinen anzurühren. Zusätzlich wird eine vorhandene m.db als Schema-Vorlage abgefragt. Wellenform und Beatgrid berechnet Engine bei der ersten Analyse neu.',
+      engineExportBtn: 'Engine-Bibliothek erzeugen',
+      engineOutDone: 'Engine-Bibliothek erstellt: {n} Titel, {cues} Cues, {loops} Loops in {path}.',
       warnHeader: 'Was bei der Konvertierung nicht übernommen wurde:',
       title: 'Bibliothek konvertieren',
       subtitle: 'Exportiert die Bibliothek zu anderer DJ-Software. Immer in neue Dateien: Originale werden nie angefasst.',

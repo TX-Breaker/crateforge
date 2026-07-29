@@ -57,6 +57,18 @@ const api = {
       ipcRenderer.invoke('export:traktorNml', outPath, sel),
     virtualdjXml: (outPath: string, sel?: unknown) =>
       ipcRenderer.invoke('export:virtualdjXml', outPath, sel),
+    // Engine DJ: genera una libreria NUOVA nella cartella scelta (non tocca
+    // quella esistente). Serve un m.db come modello dello schema.
+    engineLibrary: (outDir: string, templateDbPath: string, sel?: { playlistIds?: number[] }) =>
+      ipcRenderer.invoke('export:engineLibrary', outDir, templateDbPath, sel) as Promise<{
+        ok: boolean;
+        tracks?: number;
+        cues?: number;
+        loops?: number;
+        dbPath?: string;
+        warnings?: string[];
+        message?: string;
+      }>,
     // Serato: i cue vivono nei tag dei file audio, non in un file di libreria.
     // Richiede il gate delle scritture dirette; backup+rollback nel sidecar.
     seratoCues: (sel?: { playlistIds?: number[] }) =>

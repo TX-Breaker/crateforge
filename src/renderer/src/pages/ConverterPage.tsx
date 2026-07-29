@@ -229,6 +229,66 @@ export function ConverterPage() {
     setPending(dstSel);
   };
 
+  /**
+   * Serato: i cue non stanno in un file di libreria ma nei tag dei FILE AUDIO,
+   * quindi è una scrittura sugli originali (gate + backup + rollback nel
+   * sidecar). Non c'è un file da salvare: si conferma e basta.
+   */
+  const doExportSerato = async () => {
+    setBusy(true);
+    setError(null);
+    setOutcome(null);
+    setWarnings([]);
+    try {
+      const sel = convertSource ? { source: convertSource } : undefined;
+      const r = await window.crateforge.exporter.seratoCues(sel as never);
+      if (!r.ok) {
+        setError(r.message ?? tp('convErr'));
+        return;
+      }
+      setOutcome(tp('seratoOutDone', { n: r.written ?? 0, files: r.files ?? 0, dir: r.backupDir ?? '' }));
+      if (r.failed) setWarnings([tp('seratoFailed', { n: r.failed })]);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Engine DJ: si genera una libreria NUOVA in una cartella scelta dall'utente.
+   * Serve indicare un m.db esistente come modello dello schema, così la
+   * libreria prodotta combacia con la versione di Engine installata.
+   */
+  const doExportEngine = async () => {
+    const outDir = await window.crateforge.dialog.openDirectory();
+    if (!outDir) return;
+    const template = await window.crateforge.dialog.openFile([
+      { name: 'Engine DJ (m.db)', extensions: ['db'] }
+    ]);
+    if (!template) return;
+    setBusy(true);
+    setError(null);
+    setOutcome(null);
+    setWarnings([]);
+    try {
+      const sel = convertSource ? { source: convertSource } : undefined;
+      const r = await window.crateforge.exporter.engineLibrary(outDir, template, sel as never);
+      if (!r.ok) {
+        setError(r.message ?? tp('convErr'));
+        return;
+      }
+      setOutcome(
+        tp('engineOutDone', { n: r.tracks ?? 0, cues: r.cues ?? 0, loops: r.loops ?? 0, path: r.dbPath ?? '' })
+      );
+      if (r.warnings?.length) setWarnings(r.warnings);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const doExport = async () => {
     if (!pending) return;
     const fmt = FORMATS.find((f) => f.id === pending)!;
@@ -338,22 +398,31 @@ export function ConverterPage() {
         ))}
       </div>
 
+      {/* Serato ed Engine non producono un file da importare a mano: il primo
+          scrive dentro i file audio, il secondo genera una libreria. Restano
+          quindi separati dalle card sopra, con le loro avvertenze. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="opacity-75">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              Serato <Badge variant="secondary">{tp('comingSoon')}</Badge>
-            </CardTitle>
-            <CardDescription>{tp('seratoReason')}</CardDescription>
+            <CardTitle className="text-base">Serato</CardTitle>
+            <CardDescription>{tp('seratoExportDesc')}</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button onClick={doExportSerato} disabled={busy} variant="outline">
+              <Download /> {tp('seratoExportBtn')}
+            </Button>
+          </CardContent>
         </Card>
-        <Card className="opacity-75">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              Engine DJ <Badge variant="secondary">{tp('comingSoon')}</Badge>
-            </CardTitle>
-            <CardDescription>{tp('engineReason')}</CardDescription>
+            <CardTitle className="text-base">Engine DJ</CardTitle>
+            <CardDescription>{tp('engineExportDesc')}</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button onClick={doExportEngine} disabled={busy} variant="outline">
+              <Download /> {tp('engineExportBtn')}
+            </Button>
+          </CardContent>
         </Card>
       </div>
 
