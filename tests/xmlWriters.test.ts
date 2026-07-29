@@ -44,9 +44,9 @@ describe('writeRekordboxXml', () => {
     expect(tracks).toHaveLength(4);
   });
 
-  it('applica il limite di 8 hot cue (§4)', () => {
+  it('rispetta gli 8 pad di Rekordbox degradando il resto a memory', () => {
     const out = join(tmp, 'rb.xml');
-    writeRekordboxXml(db, out);
+    const r = writeRekordboxXml(db, out);
     const doc = parse(out);
     const tracks = doc.DJ_PLAYLISTS.COLLECTION.TRACK as Record<string, unknown>[];
     const levels = tracks.find((t) => (t['@_Name'] as string).startsWith('Levels'))!;
@@ -54,9 +54,14 @@ describe('writeRekordboxXml', () => {
     const hot = marks.filter((m) => m['@_Type'] === '0' && Number(m['@_Num']) >= 0);
     const memory = marks.filter((m) => m['@_Type'] === '0' && m['@_Num'] === '-1');
     const loops = marks.filter((m) => m['@_Type'] === '4');
-    expect(hot).toHaveLength(8); // dalle 10 in ingresso
-    expect(memory).toHaveLength(1);
-    // Loop ora esportati (roadmap §7.2): POSITION_MARK Type=4 con Start+End.
+
+    // Il limite dei pad resta (Rekordbox ne ha 8)…
+    expect(hot).toHaveLength(8);
+    // …ma i 2 hot cue in eccesso NON spariscono più: diventano memory cue,
+    // così la posizione sopravvive alla conversione (1 memory di partenza + 2).
+    expect(memory).toHaveLength(3);
+    expect(r.warnings.some((w) => w.includes('8 pad'))).toBe(true);
+    // Loop esportati come POSITION_MARK Type=4 con Start+End.
     expect(loops).toHaveLength(1);
     expect(loops[0]['@_End']).toBe('72.000');
   });
